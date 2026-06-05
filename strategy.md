@@ -2,7 +2,7 @@
 
 ## Doel
 
-Linker-half dashboard dat Strudel op de achtergrond aanstuurt. Gebruikers bouwen een **tapijt van open, natuurlijke klanken** via formuliervelden (zin per regel), niet via handmatig coderen.
+Linker-half dashboard dat Strudel op de achtergrond aanstuurt. Zonder code een **gelaagde, organisch-jazzy opbouw** spelen (van textuur/drone → akkoorden → percussie → bas → swing-groove → melodie) via formuliervelden per regel. Klank-kwaliteit en tuning wegen even zwaar als features.
 
 ## Architectuur
 
@@ -14,16 +14,16 @@ Linker-half dashboard dat Strudel op de achtergrond aanstuurt. Gebruikers bouwen
 - **Auto-opbouw**: 6 fases (Air→Drone→Motion→Bass→Beat→Melody); elke regel heeft `enterAt` (0–5); `compose()` maskeert per regel zodat lagen instromen en blijven (`mask`). Duur in **minuten** (`arc.minutes`, 1–20), cycli afgeleid van tempo. UI Engelstalig. Jump-knoppen = live controle (spring naar fase). Preset-scènes verwijderd — gebruiker bouwt zelf op met + Line.
 - **One-shot**: `oneshot.js` — korte burst met `.mask("<1 0 0 0>")` bovenop lopende stack.
 
-## Fasering
+## Stand (zie README.md + knowledge_base.md voor details)
 
-1. **v1**: split layout, regels, presets, debug-code, transport, master, auto-opbouw (6 gewogen fases) + jump.
-2. **v1.5 (huidig)**: golf-modulatie — p5.waves stuurt parameters (filters/reverb) als value-pattern (`js/modulation.js`). p5 + p5.waves laden al (als pure sampler). Volgende: variant-automatisering, live playhead/visuele weerslag.
-3. **Later**: dezelfde golven groot op `#stage`; shared AudioContext-tap (algorave-patroon) voor audio-reactieve visuals.
-3. **Embed**: `offcanvas-demo.html` + class `.left-strudel-panel` op animatiepagina’s.
+- **Gedaan**: split-layout, regels, transport+master(-limiter), 6-fase auto-opbouw (minuten, gewogen) + Jump, p5.waves wave-modulatie, variant-cycling + live highlight, anchor, genormaliseerde 0–1 regelaars, catalogus-als-JSON (24 instrumenten), vaste presets (`gentle_jazz`/`vibes_marimba`/`upright_trio`/`haze`), inklappen van uitgeschakelde regels, jazz-tuning (dorian/swing/akkoorden).
+- **Volgende**: `#stage` visuals / FFT (`.analyze`/`getAnalyzerData`, `getTime()`=cycli voor sync); bewegende mod-waarden in de UI; meer sounds/presets.
+- **Embed**: `offcanvas-demo.html` + class `.left-strudel-panel` op animatiepagina's.
 
-## Conventies
+## Conventies (kort — zie README §Conventies & valkuilen)
 
-- Bootstrap 5.3 (CDN) voor collapse per zin; eigen CSS (`dashboard.css`) overschrijft naar minimal B/W.
-- Catalogi in `js/catalog/` — instrumenten en effecten met `compatibleWith` metadata.
-- Debounced `evaluate` (300 ms) alleen wanneer transport speelt.
-- Autosave JSON presets via `js/storage.js` + `localStorage` (laatste of named preset).
+- **Cache-bust `?v=N`** op álle module-imports + JSON + entry; bij wijziging overal samen ophogen (nu v14).
+- Catalogus laadt **async** → niets mag instrumenten raken op laadtijd; `PRESETS` zijn platte data.
+- Samples: `bd/sd/hh/cp` + textures betrouwbaar; `rim`/`oh` ontbreken → organische perc = synth.
+- Gehoor maker: mono rechts, ~150 Hz–1,5 kHz, boventonen, geen pure sub.
+- Bootstrap 5.3 collapse per regel; minimal B/W CSS; debounced `evaluate` (300 ms) tijdens spelen; autosave naar `localStorage:last`.
