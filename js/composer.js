@@ -1,9 +1,10 @@
 /**
  * UI-state → Strudel code (setcpm + stack).
  */
-import { getInstrument } from './catalog/instruments.js';
-import { getEffect } from './catalog/effects.js';
-import { buildInstrumentBase } from './catalog/variations.js';
+import { getInstrument } from './catalog/instruments.js?v=6';
+import { getEffect } from './catalog/effects.js?v=6';
+import { buildInstrumentBase } from './catalog/variations.js?v=6';
+import { modValuePattern } from './modulation.js?v=6';
 
 /** Aantal fases in de auto-opbouw — 6 voor een fijnmazige opbouw over minuten. */
 export const ARC_PHASES = 6;
@@ -61,9 +62,58 @@ export function createLine(overrides = {}) {
         instrumentId: instrument.id,
         volume: overrides.volume ?? instrument.defaultVolume ?? 0.3,
         variantIndex: overrides.variantIndex ?? 0,
+        variantCycle: normalizeVariantCycle(overrides.variantCycle),
         enterAt: clampPhase(overrides.enterAt ?? 0),
+        anchor: normalizeAnchor(overrides.anchor),
         effects: overrides.effects || defaultEffectsFor(instrument)
     };
+}
+
+/**
+ * Hoorbaar anker: zachte octaaf-verschoven kopie die de klank het hoorvenster
+ * in trekt (voor wie alleen ~150 Hz–1,5 kHz hoort), terwijl het origineel
+ * vol-bereik blijft spelen voor het publiek. octaves 1 of 2 omhoog.
+ */
+export function normalizeAnchor(a) {
+    if (!a || typeof a !== 'object') return { enabled: false, octaves: 1 };
+    const oct = Math.max(1, Math.min(2, Math.round(Number(a.octaves) || 1)));
+    return { enabled: a.enabled === true, octaves: oct };
+}
+
+/** Vaste relatieve sterkte van het anker t.o.v. het origineel. */
+const ANCHOR_GAIN = 0.4;
+
+/**
+ * Variant-cycling: laat een regel z'n varianten traag wisselen over de maten,
+ * reproduceerbaar via `arrange([N, …])`. `count` opeenvolgende varianten vanaf
+ * `variantIndex`, elk `cycles` cycli vastgehouden. Lus-periode = count·cycles.
+ */
+export function normalizeVariantCycle(vc) {
+    if (!vc || typeof vc !== 'object') return { enabled: false, count: 3, cycles: 4 };
+    return {
+        enabled: vc.enabled === true,
+        count: Math.max(2, Math.min(8, Math.round(Number(vc.count) || 3))),
+        cycles: Math.max(1, Math.min(16, Math.round(Number(vc.cycles) || 4)))
+    };
+}
+
+/** Lijst variant-indices die een regel doorloopt, of null als cycling uit staat. */
+export function variantCycleList(line) {
+    const vc = line.variantCycle;
+    if (!vc || !vc.enabled) return null;
+    const start = Math.max(0, Math.min(7, Math.round(Number(line.variantIndex) || 0)));
+    const count = Math.max(2, Math.min(8, vc.count || 3));
+    return Array.from({ length: count }, (_, k) => (start + k) % 8);
+}
+
+/** Welke variant klinkt nu, gegeven de cyclus-positie (`getTime()`). */
+export function activeVariantAt(line, cycle) {
+    const list = variantCycleList(line);
+    if (!list) return line.variantIndex ?? 0;
+    const n = Math.max(1, line.variantCycle.cycles || 4);
+    const period = list.length * n;
+    const pos = Math.floor(((((cycle % period) + period) % period)) / n);
+    return list[pos];
 }
 
 /** Standaard-effecten per instrument; bas krijgt een zichtbare Lowpass i.p.v. een verborgen filter. */
@@ -129,8 +179,20 @@ function formatValue(fx, raw) {
 
 export function buildLineChain(line, variantOverride) {
     const instrument = getInstrument(line.instrumentId);
-    const variant = variantOverride ?? line.variantIndex ?? 0;
-    let chain = buildInstrumentBase(instrument, variant);
+    // Variant-cycling alleen in de volle compositie, niet bij een one-shot preview
+    // (die toont juist één variant via variantOverride).
+    const cycleList = variantOverride == null ? variantCycleList(line) : null;
+    let chain;
+    if (cycleList) {
+        const n = Math.max(1, line.variantCycle.cycles || 4);
+        const sections = cycleList
+            .map((i) => `[${n}, ${buildInstrumentBase(instrument, i)}]`)
+            .join(', ');
+        chain = `arrange(${sections})`;
+    } else {
+        const variant = variantOverride ?? line.variantIndex ?? 0;
+        chain = buildInstrumentBase(instrument, variant);
+    }
 
     const gainVal = Number(line.volume);
     if (!Number.isNaN(gainVal)) {
@@ -147,39 +209,46 @@ export function buildLineChain(line, variantOverride) {
     for (const slot of slots) {
         const fx = getEffect(slot.effectId);
         if (fx.id === 'none' || !fx.apply) continue;
-        const fragment = fx.apply(formatValue(fx, slot.value));
+        // Golf-gestuurde waarde indien aanwezig, anders de statische waarde.
+        const pattern = modValuePattern(slot.mod);
+        const value = pattern || formatValue(fx, slot.value);
+        const fragment = fx.apply(value);
         if (fragment) chain += fragment;
+    }
+
+    // Hoorbaar anker: alleen voor toon-content (transpose op samples slaat nergens
+    // op). Origineel blijft vol-bereik; de kopie schuift een octaaf hoorbaar omhoog.
+    const isTonal = (instrument.tags || []).includes('note');
+    if (isTonal && line.anchor && line.anchor.enabled) {
+        const semis = (line.anchor.octaves || 1) * 12;
+        chain = `stack(${chain}, ${chain}.transpose(${semis}).gain(${ANCHOR_GAIN}))`;
     }
 
     return chain;
 }
 
-export function buildStackBody(lines, arc, cpm, previewPhase = null) {
+export function buildStackBody(lines, arc, cpm) {
     if (!lines.length) {
         return 'silence';
     }
     const a = normalizeArc(arc);
-    const preview = previewPhase != null;
-    const cycleArr = preview ? null : arcPhaseCycleArray(cpm, a.minutes);
+    const cycleArr = arcPhaseCycleArray(cpm, a.minutes);
 
     return lines
         .map((line) => {
             const chain = buildLineChain(line);
             const enterAt = clampPhase(line.enterAt ?? 0);
-
-            // Sprong naar fase: statische mix t/m die fase, geen tijd-mask.
-            if (preview) {
-                const audible = line.enabled && enterAt <= previewPhase;
-                return audible ? `  ${chain}` : `  // ${chain}`;
-            }
-
             const masked = a.enabled ? chain + arcMaskFragment(enterAt, cycleArr) : chain;
             return line.enabled ? `  ${masked}` : `  // ${masked}`;
         })
         .join(',\n');
 }
 
-/** Master-fragment voor de top-level pattern: `.gain(master)` (leeg bij 1). */
+/**
+ * Master-fragment voor de top-level pattern: `.gain(master)` schaalt de invoer
+ * naar de master-limiter (zie `strudel-runtime.js`). De limiter — niet deze
+ * gain — is het echte plafond op de som van alle lagen.
+ */
 export function masterGainFragment(state) {
     const master = clampMaster(state?.master ?? DEFAULT_MASTER);
     return `.gain(${formatValue({ valueType: 'slider' }, master)})`;
@@ -187,17 +256,11 @@ export function masterGainFragment(state) {
 
 export function compose(state) {
     const cpm = Number(state.cpm) || 55;
-    const previewPhase = state.previewPhase != null ? clampPhase(state.previewPhase) : null;
-
-    const active = state.lines.filter((l) => {
-        if (!l.enabled) return false;
-        if (previewPhase != null) return clampPhase(l.enterAt ?? 0) <= previewPhase;
-        return true;
-    });
+    const active = state.lines.filter((l) => l.enabled);
     if (!active.length) {
         return `setcpm(${cpm})\n\nsilence`;
     }
-    const body = buildStackBody(state.lines, state.arc, cpm, previewPhase);
+    const body = buildStackBody(state.lines, state.arc, cpm);
     return `setcpm(${cpm})\n\nstack(\n${body}\n)${masterGainFragment(state)}`;
 }
 
@@ -210,71 +273,4 @@ export function countActiveLines(lines) {
     return lines.filter((l) => l.enabled).length;
 }
 
-/**
- * Preset-scènes. `build` = de volledige boog (texture → motion → beat → melody).
- * pulse/lofi/drive zijn geaarde, beat-gerichte presets (minder zweverig).
- */
-export const SCENES = {
-    build: {
-        cpm: 60,
-        arc: { enabled: true, minutes: 15 },
-        // Kampvuur → vol. Lange, minimale, lage intro; beat/melodie komen pas laat.
-        lines: [
-            // Fase 1 (Air, ~4 min) — alleen lage warme drone + spaarzaam vuur.
-            createLine({ instrumentId: 'sine_drone', volume: 0.32, variantIndex: 0, enterAt: 0, effects: [{ effectId: 'room', value: 0.5 }, { effectId: 'slow', value: 4 }] }),
-            createLine({ instrumentId: 'crackle', volume: 0.16, variantIndex: 0, enterAt: 0, effects: [{ effectId: 'lpf', value: 1200 }, { effectId: 'sparse', value: 0.4 }] }),
-            // Fase 2 (Drone, ~4 min) — lage warme wash + trage natuurlijke wind.
-            createLine({ instrumentId: 'pink', volume: 0.16, variantIndex: 0, enterAt: 1, effects: [{ effectId: 'lpf', value: 400 }, { effectId: 'room', value: 0.45 }] }),
-            createLine({ instrumentId: 'wind', volume: 0.18, enterAt: 1, effects: [{ effectId: 'lpf', value: 600 }, { effectId: 'room', value: 0.5 }] }),
-            // Fase 3 (Motion) — tweede lage drone (harmonische beweging) + iets meer vuur.
-            createLine({ instrumentId: 'sine_drone', volume: 0.24, variantIndex: 4, enterAt: 2, effects: [{ effectId: 'room', value: 0.6 }, { effectId: 'slow', value: 4 }] }),
-            createLine({ instrumentId: 'crackle', volume: 0.13, variantIndex: 2, enterAt: 2, effects: [{ effectId: 'lpf', value: 1800 }, { effectId: 'sparse', value: 0.3 }] }),
-            // Fase 4 (Bass) — warme lage bas.
-            createLine({ instrumentId: 'bass', volume: 0.4, variantIndex: 1, enterAt: 3, effects: [{ effectId: 'lpf', value: 600 }, { effectId: 'room', value: 0.2 }] }),
-            // Fase 5 (Beat) — minimale beat, niet druk.
-            createLine({ instrumentId: 'beat', volume: 0.45, variantIndex: 1, enterAt: 4, effects: [{ effectId: 'lpf', value: 5000 }, { effectId: 'room', value: 0.25 }] }),
-            // Fase 6 (Melody) — climax, ingetogen.
-            createLine({ instrumentId: 'lead', volume: 0.32, variantIndex: 0, enterAt: 5, effects: [{ effectId: 'delay', value: 0.4 }, { effectId: 'room', value: 0.5 }] })
-        ]
-    },
-    pulse: {
-        cpm: 66,
-        arc: { enabled: true, minutes: 9 },
-        lines: [
-            createLine({ instrumentId: 'pink', volume: 0.12, enterAt: 0, effects: [{ effectId: 'hpf', value: 1200 }, { effectId: 'room', value: 0.2 }] }),
-            createLine({ instrumentId: 'bass', volume: 0.42, variantIndex: 1, enterAt: 2, effects: [{ effectId: 'lpf', value: 700 }, { effectId: 'none', value: 0 }] }),
-            createLine({ instrumentId: 'beat', volume: 0.6, variantIndex: 0, enterAt: 3, effects: [{ effectId: 'room', value: 0.15 }, { effectId: 'none', value: 0 }] }),
-            createLine({ instrumentId: 'lead', volume: 0.3, variantIndex: 1, enterAt: 5, effects: [{ effectId: 'delay', value: 0.2 }, { effectId: 'room', value: 0.25 }] })
-        ]
-    },
-    lofi: {
-        cpm: 48,
-        arc: { enabled: true, minutes: 10 },
-        lines: [
-            createLine({ instrumentId: 'crackle', volume: 0.14, enterAt: 0, effects: [{ effectId: 'hpf', value: 1500 }, { effectId: 'room', value: 0.2 }] }),
-            createLine({ instrumentId: 'bass', volume: 0.4, variantIndex: 2, enterAt: 2, effects: [{ effectId: 'lpf', value: 600 }, { effectId: 'none', value: 0 }] }),
-            createLine({ instrumentId: 'beat', volume: 0.5, variantIndex: 2, enterAt: 3, effects: [{ effectId: 'lpf', value: 3000 }, { effectId: 'room', value: 0.3 }] }),
-            createLine({ instrumentId: 'lead', volume: 0.32, variantIndex: 0, enterAt: 5, effects: [{ effectId: 'delay', value: 0.35 }, { effectId: 'room', value: 0.4 }] })
-        ]
-    },
-    drive: {
-        cpm: 74,
-        arc: { enabled: true, minutes: 9 },
-        lines: [
-            createLine({ instrumentId: 'pink', volume: 0.1, enterAt: 0, effects: [{ effectId: 'bpf', value: 1800 }, { effectId: 'none', value: 0 }] }),
-            createLine({ instrumentId: 'bass', volume: 0.45, variantIndex: 3, enterAt: 2, effects: [{ effectId: 'lpf', value: 900 }, { effectId: 'none', value: 0 }] }),
-            createLine({ instrumentId: 'beat', volume: 0.55, variantIndex: 5, enterAt: 3, effects: [{ effectId: 'room', value: 0.2 }, { effectId: 'none', value: 0 }] }),
-            createLine({ instrumentId: 'lead', volume: 0.34, variantIndex: 2, enterAt: 5, effects: [{ effectId: 'delay', value: 0.25 }, { effectId: 'room', value: 0.3 }] })
-        ]
-    }
-};
 
-export function applyScene(sceneId) {
-    const scene = SCENES[sceneId];
-    if (!scene) return null;
-    return {
-        cpm: scene.cpm,
-        arc: normalizeArc(scene.arc || DEFAULT_ARC),
-        lines: scene.lines.map((l) => createLine({ ...l, id: undefined }))
-    };
-}

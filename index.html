@@ -42,15 +42,6 @@
                     <p class="ls-status" id="status" aria-live="polite">Ready</p>
                 </div>
 
-                <div class="ls-scenes" aria-label="Presets">
-                    <div class="ls-scene-btns">
-                        <button type="button" class="ls-btn ls-btn--scene ls-btn--primary" data-scene="build">Build</button>
-                        <button type="button" class="ls-btn ls-btn--scene" data-scene="pulse">Pulse</button>
-                        <button type="button" class="ls-btn ls-btn--scene" data-scene="lofi">Lo-Fi</button>
-                        <button type="button" class="ls-btn ls-btn--scene" data-scene="drive">Drive</button>
-                    </div>
-                </div>
-
                 <div class="ls-arc" aria-label="Auto build-up">
                     <label class="ls-arc-toggle">
                         <input type="checkbox" id="arc-enabled" checked>
@@ -63,10 +54,6 @@
                         <span class="ls-unit">min</span>
                     </label>
                     <p class="ls-arc-hint">Air → Drone → Motion → Bass → Beat → Melody. Each line enters "from" a phase and stays — spread across the full build-up.</p>
-                    <div class="ls-phases" aria-label="Jump to build-up phase">
-                        <span class="ls-label">Jump</span>
-                        <div class="ls-phase-btns" id="phase-btns"></div>
-                    </div>
                 </div>
 
                 <div class="ls-lines" id="lines-container" aria-label="Lines"></div>
@@ -105,7 +92,10 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script type="module" src="js/main.js"></script>
+    <!-- p5 + p5.waves: gebruikt als modulatiebron (golf → parameterwaarden) en later als visual. -->
+    <script src="https://cdn.jsdelivr.net/npm/p5@2.2.2/lib/p5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/seb-prjcts-be/p5.waves@v3.3.0/p5.waves.min.js"></script>
+    <script type="module" src="js/main.js?v=6"></script>
 </body>
 
 </html>

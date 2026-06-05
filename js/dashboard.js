@@ -1,14 +1,21 @@
 /**
  * DOM: regels renderen, events, debug-paneel.
  */
-import { createLine, compose, applyScene, ARC_PHASES, PHASE_LABELS, DEFAULT_ARC, DEFAULT_MASTER, clampPhase } from './composer.js';
-import { getInstrument, instrumentOptionsHtml } from './catalog/instruments.js';
+import { createLine, compose, activeVariantAt, ARC_PHASES, PHASE_LABELS, DEFAULT_ARC, DEFAULT_MASTER, clampPhase } from './composer.js?v=6';
+import { getInstrument, instrumentOptionsHtml } from './catalog/instruments.js?v=6';
 import {
     getEffect,
     effectOptionsHtml,
-    effectsForInstrument
-} from './catalog/effects.js';
-import { VARIANT_COUNT } from './catalog/variations.js';
+    effectsForInstrument,
+    normToValue,
+    valueToNorm,
+    roundEffectValue,
+    formatEffectDisplay
+} from './catalog/effects.js?v=6';
+import { VARIANT_COUNT } from './catalog/variations.js?v=6';
+import { isWavesAvailable, waveNames } from './modulation.js?v=6';
+
+const FALLBACK_WAVES = ['classic sine', 'triangle', 'square', 'mountain peaks', 'steps', 'saw up', 'noise'];
 
 export function createDefaultState() {
     return {
@@ -39,42 +46,13 @@ export class Dashboard {
         this.arcToggle = root.querySelector('#arc-enabled') || document.getElementById('arc-enabled');
         this.arcMinutes = root.querySelector('#arc-minutes') || document.getElementById('arc-minutes');
         this.arcMinutesValue = root.querySelector('#arc-minutes-value') || document.getElementById('arc-minutes-value');
-        this.phaseBtnsEl = root.querySelector('#phase-btns') || document.getElementById('phase-btns');
         this.state = createDefaultState();
         /** @type {Set<string>} open collapse panel ids per zin */
         this.openLineIds = new Set(this.state.lines.map((l) => l.id));
         this.bindGlobal();
-        this.renderPhaseButtons();
         this.syncArcControls();
-        this.syncPhaseButtons();
         this.renderLines();
         this.updateDebug();
-    }
-
-    renderPhaseButtons() {
-        if (!this.phaseBtnsEl) return;
-        this.phaseBtnsEl.innerHTML = Array.from({ length: ARC_PHASES }, (_, i) =>
-            `<button type="button" class="ls-btn ls-btn--phase" data-phase="${i}" title="Jump to ${PHASE_LABELS[i]}">${PHASE_LABELS[i]}</button>`
-        ).join('');
-        this.phaseBtnsEl.querySelectorAll('[data-phase]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const i = Number(btn.dataset.phase);
-                // Toggle: nogmaals op de actieve fase = terug naar automatische opbouw.
-                this.state.previewPhase = this.state.previewPhase === i ? null : i;
-                this.syncPhaseButtons();
-                this.callbacks.onChange();
-                this.updateDebug();
-                this.callbacks.ensurePlaying?.();
-            });
-        });
-    }
-
-    syncPhaseButtons() {
-        if (!this.phaseBtnsEl) return;
-        const p = this.state.previewPhase ?? null;
-        this.phaseBtnsEl.querySelectorAll('[data-phase]').forEach((btn) => {
-            btn.classList.toggle('is-active', Number(btn.dataset.phase) === p);
-        });
     }
 
     lineSummary(line, index) {
@@ -111,7 +89,6 @@ export class Dashboard {
         this.renderLines();
         this.updateDebug();
         this.syncArcControls();
-        this.syncPhaseButtons();
         if (this.cpmSlider) {
             this.cpmSlider.value = String(this.state.cpm);
             if (this.cpmValue) this.cpmValue.textContent = String(this.state.cpm);
@@ -173,16 +150,6 @@ export class Dashboard {
             });
         }
 
-        this.root.querySelectorAll('[data-scene]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const scene = applyScene(btn.getAttribute('data-scene'));
-                if (scene) {
-                    this.setState(scene);
-                    this.callbacks.onChange();
-                    this.callbacks.ensurePlaying?.();
-                }
-            });
-        });
     }
 
     updateDebug() {
@@ -244,6 +211,11 @@ export class Dashboard {
                             <span class="ls-label">Enter at</span>
                             <select data-field="enter-at">${this.phaseOptionsHtml(line.enterAt ?? 0)}</select>
                         </label>
+                        ${(instrument.tags || []).includes('note') ? `
+                        <label class="ls-field ls-field--full">
+                            <span class="ls-label">Anchor (octaaf-dubbel)</span>
+                            <select data-field="anchor">${this.anchorOptionsHtml(line.anchor)}</select>
+                        </label>` : ''}
                     </div>
                     ${this.buildEffectSlotHtml(line, instrument, effects[0], 0)}
                     ${this.buildEffectSlotHtml(line, instrument, effects[1], 1)}
@@ -254,6 +226,17 @@ export class Dashboard {
                                 const active = (line.variantIndex ?? 0) === i ? ' is-active' : '';
                                 return `<button type="button" class="ls-btn ls-btn--variant${active}" data-action="variant" data-variant="${i}" title="Variant ${i} — preview and pick">${i}</button>`;
                             }).join('')}
+                        </div>
+                        <div class="ls-variant-cycle">
+                            <label class="ls-field ls-field--inline">
+                                <span class="ls-label">Cycle</span>
+                                <select data-field="cycle-count">${this.cycleCountOptionsHtml(line.variantCycle)}</select>
+                            </label>
+                            <label class="ls-field ls-field--inline">
+                                <span class="ls-label">hold</span>
+                                <input type="number" data-field="cycle-hold" min="1" max="16" step="1" value="${line.variantCycle?.cycles ?? 4}">
+                                <span class="ls-unit">cycli</span>
+                            </label>
                         </div>
                     </div>
                     <div class="ls-line-actions">
@@ -281,11 +264,51 @@ export class Dashboard {
         if (summary) summary.textContent = this.lineSummary(line, index);
     }
 
+    anchorOptionsHtml(anchor) {
+        const cur = anchor && anchor.enabled ? (anchor.octaves || 1) : 0;
+        return [[0, 'uit'], [1, '+1 oct'], [2, '+2 oct']]
+            .map(([v, label]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${label}</option>`)
+            .join('');
+    }
+
+    cycleCountOptionsHtml(vc) {
+        const cur = vc && vc.enabled ? (vc.count || 3) : 0;
+        return [[0, 'uit'], [2, '2'], [3, '3'], [4, '4'], [6, '6'], [8, '8']]
+            .map(([v, label]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${label}</option>`)
+            .join('');
+    }
+
+    /** Live: licht de nu-klinkende variant op bij cycling-regels (klok = getTime, cycli). */
+    highlightCyclingVariants(cycle) {
+        if (!this.linesEl) return;
+        this.state.lines.forEach((line) => {
+            const el = this.linesEl.querySelector(`[data-line-id="${line.id}"]`);
+            if (!el) return;
+            const btns = el.querySelectorAll('[data-action="variant"]');
+            if (!(line.variantCycle && line.variantCycle.enabled)) {
+                btns.forEach((b) => b.classList.remove('is-live'));
+                return;
+            }
+            const active = activeVariantAt(line, cycle);
+            btns.forEach((b) => b.classList.toggle('is-live', Number(b.dataset.variant) === active));
+        });
+    }
+
+    clearLiveHighlights() {
+        if (!this.linesEl) return;
+        this.linesEl.querySelectorAll('.ls-btn--variant.is-live').forEach((b) => b.classList.remove('is-live'));
+    }
+
     buildEffectSlotHtml(line, instrument, slot, slotIndex) {
         const fx = getEffect(slot.effectId);
-        const compat = effectsForInstrument(instrument);
         const canOneShot = fx.oneShot && fx.id !== 'none';
+        const canMod = fx.id !== 'none' && fx.valueType !== 'none' && !['slow', 'fast'].includes(fx.id);
+        const modOn = !!(slot.mod && slot.mod.enabled);
         const valueInput = this.buildValueInput(fx, slot, slotIndex);
+
+        const modToggle = canMod
+            ? `<button type="button" class="ls-btn ls-btn--mod${modOn ? ' is-active' : ''}" data-action="toggle-mod" title="${modOn ? 'Wave modulation on' : 'Drive this with a wave'}">~</button>`
+            : '<span class="ls-effect-spacer" aria-hidden="true"></span>';
 
         return `
             <div class="ls-effect-row" data-slot="${slotIndex}">
@@ -294,7 +317,36 @@ export class Dashboard {
                     <select data-field="effect-id">${effectOptionsHtml(instrument, slot.effectId)}</select>
                 </label>
                 ${valueInput}
+                ${modToggle}
                 ${canOneShot ? `<button type="button" class="ls-btn ls-btn--play ls-btn--oneshot" data-action="oneshot-effect" data-effect-id="${fx.id}" title="Play effect once">▶</button>` : '<span class="ls-effect-spacer" aria-hidden="true"></span>'}
+            </div>
+            ${modOn ? this.buildModPanel(slot, slotIndex) : ''}
+        `;
+    }
+
+    buildModPanel(slot, slotIndex) {
+        const mod = slot.mod || {};
+        const fx = getEffect(slot.effectId);
+        const names = waveNames() || FALLBACK_WAVES;
+        const opts = names.map((n) => `<option value="${n}"${n === mod.wave ? ' selected' : ''}>${n}</option>`).join('');
+        const warn = isWavesAvailable() ? '' : '<p class="ls-mod-warn">p5.waves not loaded — using static value.</p>';
+        return `
+            <div class="ls-mod" data-slot-mod="${slotIndex}">
+                <label class="ls-field ls-field--full">
+                    <span class="ls-label">Wave</span>
+                    <select data-field="mod-wave">${opts}</select>
+                </label>
+                <div class="ls-mod-row">
+                    <label class="ls-field"><span class="ls-label">Min</span>
+                        <input type="range" data-field="mod-min" min="0" max="1" step="0.01" value="${valueToNorm(fx, mod.min).toFixed(3)}">
+                        <output data-field="mod-min-out">${formatEffectDisplay(fx, mod.min)}</output></label>
+                    <label class="ls-field"><span class="ls-label">Max</span>
+                        <input type="range" data-field="mod-max" min="0" max="1" step="0.01" value="${valueToNorm(fx, mod.max).toFixed(3)}">
+                        <output data-field="mod-max-out">${formatEffectDisplay(fx, mod.max)}</output></label>
+                    <label class="ls-field"><span class="ls-label">Cycles</span>
+                        <input type="number" data-field="mod-cycles" min="1" max="64" step="1" value="${mod.cycles}"></label>
+                </div>
+                ${warn}
             </div>
         `;
     }
@@ -303,18 +355,13 @@ export class Dashboard {
         if (!fx || fx.id === 'none' || fx.valueType === 'none') {
             return '<label class="ls-field"><span class="ls-label">Value</span><input type="text" disabled value="—"></label>';
         }
-        if (fx.valueType === 'slider') {
-            return `
-                <label class="ls-field">
-                    <span class="ls-label">Value</span>
-                    <input type="range" data-field="effect-value" min="${fx.min}" max="${fx.max}" step="${fx.step}" value="${slot.value}">
-                </label>
-            `;
-        }
+        // Genormaliseerde 0–1 regelaar; echte waarde (Hz enz.) als hint ernaast.
+        const pos = valueToNorm(fx, slot.value);
         return `
             <label class="ls-field">
                 <span class="ls-label">Value</span>
-                <input type="number" data-field="effect-value" min="${fx.min}" max="${fx.max}" step="${fx.step}" value="${slot.value}">
+                <input type="range" data-field="effect-value" min="0" max="1" step="0.01" value="${pos.toFixed(3)}">
+                <output data-field="effect-value-out">${formatEffectDisplay(fx, slot.value)}</output>
             </label>
         `;
     }
@@ -386,6 +433,31 @@ export class Dashboard {
             notify();
         });
 
+        el.querySelector('[data-field="anchor"]')?.addEventListener('change', (e) => {
+            const v = Number(e.target.value);
+            if (!line.anchor) line.anchor = { enabled: false, octaves: 1 };
+            line.anchor.enabled = v > 0;
+            if (v > 0) line.anchor.octaves = v;
+            notify();
+        });
+
+        el.querySelector('[data-field="cycle-count"]')?.addEventListener('change', (e) => {
+            const v = Number(e.target.value);
+            if (!line.variantCycle) line.variantCycle = { enabled: false, count: 3, cycles: 4 };
+            line.variantCycle.enabled = v >= 2;
+            if (v >= 2) line.variantCycle.count = v;
+            if (!line.variantCycle.enabled) {
+                el.querySelectorAll('[data-action="variant"]').forEach((b) => b.classList.remove('is-live'));
+            }
+            notify();
+        });
+
+        el.querySelector('[data-field="cycle-hold"]')?.addEventListener('input', (e) => {
+            if (!line.variantCycle) line.variantCycle = { enabled: false, count: 3, cycles: 4 };
+            line.variantCycle.cycles = Math.max(1, Math.min(16, Number(e.target.value) || 4));
+            notify();
+        });
+
         const vol = el.querySelector('[data-field="volume"]');
         const volOut = vol?.nextElementSibling;
         vol?.addEventListener('input', () => {
@@ -404,14 +476,66 @@ export class Dashboard {
                 const fx = getEffect(e.target.value);
                 line.effects[idx].effectId = e.target.value;
                 line.effects[idx].value = fx.defaultValue ?? 0;
+                delete line.effects[idx].mod; // mod-bereik hoort bij het oude effect
                 this.renderLines();
                 notify();
             });
 
             slotEl.querySelector('[data-field="effect-value"]')?.addEventListener('input', (e) => {
-                line.effects[idx].value = Number(e.target.value);
+                const fx = getEffect(line.effects[idx].effectId);
+                const real = roundEffectValue(fx, normToValue(fx, e.target.value));
+                line.effects[idx].value = real;
+                const out = slotEl.querySelector('[data-field="effect-value-out"]');
+                if (out) out.textContent = formatEffectDisplay(fx, real);
                 notify();
             });
+
+            // Golf-modulatie aan/uit voor dit slot.
+            slotEl.querySelector('[data-action="toggle-mod"]')?.addEventListener('click', () => {
+                const slot = line.effects[idx];
+                const fx = getEffect(slot.effectId);
+                if (!slot.mod) {
+                    slot.mod = {
+                        enabled: false,
+                        wave: 'classic sine',
+                        min: Number.isFinite(fx.min) ? fx.min : 0,
+                        max: Number.isFinite(fx.max) ? fx.max : 1,
+                        cycles: 16
+                    };
+                }
+                slot.mod.enabled = !slot.mod.enabled;
+                this.renderLines();
+                notify();
+            });
+
+            // Mod-paneel is een sibling van de rij → op regelniveau zoeken.
+            const modPanel = el.querySelector(`[data-slot-mod="${idx}"]`);
+            if (modPanel) {
+                modPanel.querySelector('[data-field="mod-wave"]')?.addEventListener('change', (e) => {
+                    line.effects[idx].mod.wave = e.target.value;
+                    notify();
+                });
+                modPanel.querySelector('[data-field="mod-min"]')?.addEventListener('input', (e) => {
+                    const fx = getEffect(line.effects[idx].effectId);
+                    const real = roundEffectValue(fx, normToValue(fx, e.target.value));
+                    line.effects[idx].mod.min = real;
+                    const out = modPanel.querySelector('[data-field="mod-min-out"]');
+                    if (out) out.textContent = formatEffectDisplay(fx, real);
+                    notify();
+                });
+                modPanel.querySelector('[data-field="mod-max"]')?.addEventListener('input', (e) => {
+                    const fx = getEffect(line.effects[idx].effectId);
+                    const real = roundEffectValue(fx, normToValue(fx, e.target.value));
+                    line.effects[idx].mod.max = real;
+                    const out = modPanel.querySelector('[data-field="mod-max-out"]');
+                    if (out) out.textContent = formatEffectDisplay(fx, real);
+                    notify();
+                });
+                modPanel.querySelector('[data-field="mod-cycles"]')?.addEventListener('input', (e) => {
+                    line.effects[idx].mod.cycles = Number(e.target.value);
+                    notify();
+                });
+            }
 
             slotEl.querySelector('[data-action="oneshot-effect"]')?.addEventListener('click', () => {
                 const effectId = slotEl.querySelector('[data-action="oneshot-effect"]').dataset.effectId;

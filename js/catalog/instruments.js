@@ -1,88 +1,34 @@
 /**
- * Instrument presets — basis-chains voor elke zin.
- * tags: sample | synth | note
+ * Instrument-catalogus — geladen uit `data/instruments.json` (op voorhand,
+ * vóór de UI wordt opgebouwd). Zie `loadInstruments()` in `main.js`-boot.
+ * Velden: id, label, tags, base, defaultVolume, optioneel variant-recept
+ * (geïnterpreteerd door `catalog/variations.js`).
  */
-export const INSTRUMENTS = [
-    {
-        id: 'wind',
-        label: 'Wind',
-        tags: ['sample'],
-        base: 's("wind").loopAt(8)',
-        defaultVolume: 0.3
-    },
-    {
-        id: 'birds',
-        label: 'Birds',
-        tags: ['sample'],
-        base: 's("birds").loopAt(8)',
-        defaultVolume: 0.25
-    },
-    {
-        id: 'pad',
-        label: 'Pad',
-        tags: ['sample'],
-        base: 's("pad").loopAt(4).striate(16)',
-        defaultVolume: 0.35
-    },
-    {
-        id: 'pink',
-        label: 'Pink noise',
-        tags: ['synth'],
-        // Trage, zwellende wash (geen retrigger-geratel).
-        base: 's("pink").slow(2).attack(1).release(1)',
-        defaultVolume: 0.18
-    },
-    {
-        id: 'crackle',
-        label: 'Crackle',
-        tags: ['synth', 'crackle'],
-        // Kampvuur: één bron, dichtheid = hoe vaak het knettert.
-        base: 's("crackle")',
-        defaultVolume: 0.2
-    },
-    {
-        id: 'white',
-        label: 'White noise',
-        tags: ['synth'],
-        base: 's("white").slow(2).attack(1).release(1)',
-        defaultVolume: 0.12
-    },
-    {
-        id: 'sine_drone',
-        label: 'Sine drone',
-        tags: ['note'],
-        base: 'note("c2").s("sine").attack(0.3).release(0.8)',
-        defaultVolume: 0.28
-    },
-    {
-        id: 'triangle_melody',
-        label: 'Triangle melody',
-        tags: ['note'],
-        base: 'note("<c4 eb4 g4 bb3>").s("triangle").slow(2)',
-        defaultVolume: 0.35
-    },
-    {
-        id: 'beat',
-        label: 'Beat',
-        tags: ['sample', 'drums'],
-        base: 's("bd ~ sd ~, hh*8")',
-        defaultVolume: 0.6
-    },
-    {
-        id: 'bass',
-        label: 'Bass',
-        tags: ['note', 'bass'],
-        base: 'n("0 0 3 0").scale("c2:minor").s("sawtooth").lpf(700).release(0.18)',
-        defaultVolume: 0.45
-    },
-    {
-        id: 'lead',
-        label: 'Melody',
-        tags: ['note', 'melody'],
-        base: 'n("0 2 4 2").scale("c4:minor").s("triangle").slow(2)',
-        defaultVolume: 0.4
-    }
-];
+let INSTRUMENTS = [];
+let loadPromise = null;
+
+/** Laad de catalogus één keer. Resolved met de instrument-array. */
+export function loadInstruments(url = 'data/instruments.json?v=6') {
+    if (loadPromise) return loadPromise;
+    loadPromise = fetch(url)
+        .then((res) => {
+            if (!res.ok) throw new Error(`instruments.json: HTTP ${res.status}`);
+            return res.json();
+        })
+        .then((data) => {
+            const list = Array.isArray(data) ? data : data.instruments;
+            if (!Array.isArray(list) || !list.length) {
+                throw new Error('instruments.json bevat geen instrumenten');
+            }
+            INSTRUMENTS = list;
+            return INSTRUMENTS;
+        });
+    return loadPromise;
+}
+
+export function getInstruments() {
+    return INSTRUMENTS;
+}
 
 export function getInstrument(id) {
     return INSTRUMENTS.find((i) => i.id === id) || INSTRUMENTS[0];

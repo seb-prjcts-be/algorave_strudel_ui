@@ -1,0 +1,56 @@
+{
+  "_comment": "Instrument-catalogus voor Left Strudel. variant-recept stuurt knoppen 0-7. types: sampleIndex (.n(i)) | transpose (.transpose(i*step)) | param (.fn(from+i*step)) | notes (template met $) | patterns (items[i] + suffix). Geen variant = standaard (.n(i) voor sample, .transpose(i*2) voor note.",
+  "instruments": [
+    { "id": "wind",  "label": "Wind",  "tags": ["sample"], "base": "s(\"wind\").loopAt(8)",            "defaultVolume": 0.3 },
+    { "id": "birds", "label": "Birds", "tags": ["sample"], "base": "s(\"birds\").loopAt(8)",           "defaultVolume": 0.25 },
+    { "id": "pad",   "label": "Pad",   "tags": ["sample"], "base": "s(\"pad\").loopAt(4).striate(16)", "defaultVolume": 0.35 },
+
+    { "id": "pink",  "label": "Pink noise",  "tags": ["synth"], "base": "s(\"pink\").slow(2).attack(1).release(1)",  "defaultVolume": 0.18,
+      "variant": { "type": "param", "fn": "lpf", "from": 300, "step": 350, "decimals": 0 } },
+    { "id": "crackle", "label": "Crackle", "tags": ["synth", "crackle"], "base": "s(\"crackle\")", "defaultVolume": 0.2,
+      "variant": { "type": "param", "fn": "density", "from": 0.03, "step": 0.03, "decimals": 2 } },
+    { "id": "white", "label": "White noise", "tags": ["synth"], "base": "s(\"white\").slow(2).attack(1).release(1)", "defaultVolume": 0.12,
+      "variant": { "type": "param", "fn": "hpf", "from": 1200, "step": 350, "decimals": 0 } },
+
+    { "id": "sine_drone", "label": "Sine drone", "tags": ["note"], "base": "note(\"c2\").s(\"sine\").attack(0.3).release(0.8)", "defaultVolume": 0.28,
+      "variant": { "type": "notes", "items": ["c2","d2","e2","f2","g2","a2","b2","c3"], "template": "note(\"$\").s(\"sine\").attack(1.5).release(2.5)" } },
+    { "id": "warm_drone", "label": "Warm drone", "tags": ["note"], "base": "note(\"c3\").s(\"triangle\").attack(1.5).release(2.5)", "defaultVolume": 0.28,
+      "variant": { "type": "notes", "items": ["c3","d3","eb3","f3","g3","ab3","bb3","c4"], "template": "note(\"$\").s(\"triangle\").attack(1.5).release(2.5)" } },
+    { "id": "triangle_melody", "label": "Triangle melody", "tags": ["note"], "base": "note(\"<c4 eb4 g4 bb3>\").s(\"triangle\").slow(2)", "defaultVolume": 0.35,
+      "variant": { "type": "transpose", "step": 2 } },
+
+    { "id": "beat", "label": "Beat", "tags": ["sample", "drums"], "base": "s(\"bd ~ sd ~, hh*8\")", "defaultVolume": 0.6,
+      "variant": { "type": "patterns", "items": [
+        "s(\"bd*4\")",
+        "s(\"bd ~ sd ~\")",
+        "s(\"bd ~ sd ~, hh*8\")",
+        "s(\"bd*2 ~ sd ~, hh*8\")",
+        "s(\"bd ~ ~ bd ~ ~ sd ~, hh*8\")",
+        "s(\"bd sd, hh*16\")",
+        "s(\"[bd bd] ~ sd ~, hh*8, ~ ~ ~ oh\")",
+        "s(\"bd*4, ~ cp ~ cp, hh*8\")"
+      ] } },
+    { "id": "bass", "label": "Bass", "tags": ["note", "bass"], "base": "n(\"0 0 3 0\").scale(\"c2:minor\").s(\"sawtooth\").lpf(700).release(0.18)", "defaultVolume": 0.45,
+      "variant": { "type": "patterns", "suffix": ".s(\"sawtooth\").release(0.18)", "items": [
+        "n(\"0 ~ 0 ~\").scale(\"c2:minor\")",
+        "n(\"0 0 3 0\").scale(\"c2:minor\")",
+        "n(\"0 0 5 3\").scale(\"c2:minor\")",
+        "n(\"0 3 5 7\").scale(\"c2:minor\")",
+        "n(\"0 ~ 7 ~ 0 ~ 3 ~\").scale(\"c2:minor\")",
+        "n(\"<0 3> <5 7>\").scale(\"c2:minor\")",
+        "n(\"0 0 ~ 0 3 ~ 0 5\").scale(\"c2:minor\")",
+        "n(\"0 7 5 3\").scale(\"c2:minor\")"
+      ] } },
+    { "id": "lead", "label": "Melody", "tags": ["note", "melody"], "base": "n(\"0 2 4 2\").scale(\"c4:minor\").s(\"triangle\").slow(2)", "defaultVolume": 0.4,
+      "variant": { "type": "patterns", "suffix": ".s(\"triangle\").slow(2)", "items": [
+        "n(\"0 2 4 2\").scale(\"c4:minor\")",
+        "n(\"4 3 2 0\").scale(\"c4:minor\")",
+        "n(\"0 2 4 7 4 2\").scale(\"c4:minor\")",
+        "n(\"7 4 2 0\").scale(\"c4:minor\")",
+        "n(\"0 ~ 4 ~ 7 ~ 4 ~\").scale(\"c4:minor\")",
+        "n(\"<0 4> <2 7>\").scale(\"c4:minor\")",
+        "n(\"0 1 2 3 4 5 6 7\").scale(\"c4:minor\")",
+        "n(\"4 7 4 2 0 2\").scale(\"c4:minor\")"
+      ] } }
+  ]
+}

@@ -1,22 +1,23 @@
 /**
  * Left Strudel — orchestratie, transport, debounced evaluate.
  */
-import { Dashboard } from './dashboard.js';
-import { compose, countActiveLines } from './composer.js';
-import { getStrudelRuntime, evaluateCode, stopAll, isSamplesReady } from './strudel-runtime.js';
+import { Dashboard } from './dashboard.js?v=6';
+import { compose, countActiveLines } from './composer.js?v=6';
+import { getStrudelRuntime, evaluateCode, stopAll, isSamplesReady } from './strudel-runtime.js?v=6';
 import {
     playLineBurst,
     playLineStandalone,
     playEffectBurst,
     playEffectStandalone,
     cancelBurstTimer
-} from './oneshot.js';
+} from './oneshot.js?v=6';
 import {
     loadStateByName,
     saveStateByName,
     getPresetNameFromUrl,
     getActivePresetName
-} from './storage.js';
+} from './storage.js?v=6';
+import { loadInstruments } from './catalog/instruments.js?v=6';
 
 const DEBOUNCE_MS = 300;
 
@@ -76,6 +77,28 @@ function schedulePersist(dashboard) {
     persistTimer = setTimeout(() => persistState(dashboard), 350);
 }
 
+let highlightRaf = null;
+
+// Live UI-weerslag: licht de nu-klinkende variant op bij cycling-regels.
+// getTime() (global, na runtime-init) geeft de cyclus-positie — dezelfde klok
+// als de scheduler, dus de highlight loopt exact in de maat met de audio.
+function startHighlightLoop(dashboard) {
+    if (highlightRaf) return;
+    const tick = () => {
+        if (!playing) { highlightRaf = null; return; }
+        let cycle = 0;
+        try { if (typeof globalThis.getTime === 'function') cycle = globalThis.getTime(); } catch (e) { /* nog geen klok */ }
+        dashboard.highlightCyclingVariants(cycle);
+        highlightRaf = requestAnimationFrame(tick);
+    };
+    highlightRaf = requestAnimationFrame(tick);
+}
+
+function stopHighlightLoop(dashboard) {
+    if (highlightRaf) { cancelAnimationFrame(highlightRaf); highlightRaf = null; }
+    dashboard.clearLiveHighlights?.();
+}
+
 async function startPlayback(dashboard) {
     if (playing) {
         await refreshPlayback(dashboard);
@@ -91,6 +114,7 @@ async function startPlayback(dashboard) {
         btnPlay.classList.add('is-active');
         btnPlay.textContent = '▶ Playing';
         await refreshPlayback(dashboard);
+        startHighlightLoop(dashboard);
         if (!statusEl.classList.contains('is-error')) {
             setStatus(`Playing${samples}`, 'is-playing');
         }
@@ -115,6 +139,7 @@ function initTransport(dashboard) {
             console.warn(e);
         }
         playing = false;
+        stopHighlightLoop(dashboard);
         btnPlay.classList.remove('is-active');
         btnPlay.textContent = '▶ Start';
         btnStop.disabled = true;
@@ -138,7 +163,19 @@ const urlPreset = getPresetNameFromUrl();
 const activePreset = urlPreset || getActivePresetName();
 if (presetNameEl && activePreset) presetNameEl.value = activePreset;
 
-let dashboard = new Dashboard(panel || document.body, {
+let dashboard;
+
+async function boot() {
+    setStatus('Loading instruments…');
+    try {
+        await loadInstruments();
+    } catch (err) {
+        console.error(err);
+        setStatus('Failed to load instruments', 'is-error');
+        return;
+    }
+
+    dashboard = new Dashboard(panel || document.body, {
     onChange: () => {
         scheduleRefresh(dashboard);
         schedulePersist(dashboard);
@@ -229,6 +266,9 @@ btnLoad?.addEventListener('click', () => {
     }
 });
 
-initTransport(dashboard);
+    initTransport(dashboard);
+}
+
+boot();
 
 export { dashboard };

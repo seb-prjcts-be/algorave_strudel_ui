@@ -44,6 +44,16 @@ function normalizeLoadedState(raw) {
             const volume = Number.isFinite(Number(l.volume)) ? Number(l.volume) : 0.3;
             const variantIndex = Number.isFinite(Number(l.variantIndex)) ? Number(l.variantIndex) : 0;
             const enterAt = Number.isFinite(Number(l.enterAt)) ? Math.max(0, Math.min(5, Math.round(Number(l.enterAt)))) : 0;
+            const anchor = (l.anchor && typeof l.anchor === 'object')
+                ? { enabled: l.anchor.enabled === true, octaves: Math.max(1, Math.min(2, Math.round(Number(l.anchor.octaves) || 1))) }
+                : { enabled: false, octaves: 1 };
+            const variantCycle = (l.variantCycle && typeof l.variantCycle === 'object')
+                ? {
+                    enabled: l.variantCycle.enabled === true,
+                    count: Math.max(2, Math.min(8, Math.round(Number(l.variantCycle.count) || 3))),
+                    cycles: Math.max(1, Math.min(16, Math.round(Number(l.variantCycle.cycles) || 4)))
+                }
+                : { enabled: false, count: 3, cycles: 4 };
 
             const effects = Array.isArray(l.effects) ? l.effects : [];
             const normalizedEffects = [
@@ -58,10 +68,24 @@ function normalizeLoadedState(raw) {
                 volume,
                 variantIndex,
                 enterAt,
-                effects: normalizedEffects.map((s) => ({
-                    effectId: typeof s.effectId === 'string' ? s.effectId : 'none',
-                    value: Number.isFinite(Number(s.value)) ? Number(s.value) : 0
-                }))
+                anchor,
+                variantCycle,
+                effects: normalizedEffects.map((s) => {
+                    const slot = {
+                        effectId: typeof s.effectId === 'string' ? s.effectId : 'none',
+                        value: Number.isFinite(Number(s.value)) ? Number(s.value) : 0
+                    };
+                    if (s.mod && typeof s.mod === 'object') {
+                        slot.mod = {
+                            enabled: s.mod.enabled === true,
+                            wave: typeof s.mod.wave === 'string' ? s.mod.wave : 'classic sine',
+                            min: Number.isFinite(Number(s.mod.min)) ? Number(s.mod.min) : 0,
+                            max: Number.isFinite(Number(s.mod.max)) ? Number(s.mod.max) : 1,
+                            cycles: Number.isFinite(Number(s.mod.cycles)) ? Math.max(1, Math.min(64, Math.round(Number(s.mod.cycles)))) : 16
+                        };
+                    }
+                    return slot;
+                })
             };
         })
     };

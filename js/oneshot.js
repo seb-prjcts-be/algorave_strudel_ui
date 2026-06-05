@@ -1,10 +1,10 @@
 /**
  * Eenmalige bursts bovenop de lopende stack (geen hush tussen bursts).
  */
-import { compose, buildLineChain, masterGainFragment } from './composer.js';
-import { evaluateCode, stopAll } from './strudel-runtime.js';
-import { getEffect } from './catalog/effects.js';
-import { getInstrument } from './catalog/instruments.js';
+import { compose, buildLineChain, masterGainFragment } from './composer.js?v=6';
+import { evaluateCode, stopAll } from './strudel-runtime.js?v=6';
+import { getEffect } from './catalog/effects.js?v=6';
+import { getInstrument } from './catalog/instruments.js?v=6';
 
 let burstTimer = null;
 

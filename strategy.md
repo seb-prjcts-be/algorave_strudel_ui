@@ -11,13 +11,14 @@ Linker-half dashboard dat Strudel op de achtergrond aanstuurt. Gebruikers bouwen
 - **Code**: `composer.js` vertaalt UI-state → `setcpm` + `stack(...).gain(master)`; uitgeschakelde regels als `//` commentaar.
 - **Master**: globale volume-regelaar (naast tempo) als plafond op stack én one-shots — bescherming tegen plotse uitschieters.
 - **Varianten**: 8 knoppen (0–7) per zin via `variations.js` — `.n(i)` voor samples, param-shift voor synth/noten, patroon-banken voor `beat`/`bass`/`lead`.
-- **Auto-opbouw**: 6 fases (Air→Drone→Motion→Bass→Beat→Melody); elke regel heeft `enterAt` (0–5); `compose()` maskeert per regel zodat lagen instromen en blijven (`mask`). Duur in **minuten** (`arc.minutes`, 1–20), cycli afgeleid van tempo. UI Engelstalig. Scènes: `build` (~15-min boog, 10 lagen), `pulse`/`lofi`/`drive` (geaard, 9–10 min).
+- **Auto-opbouw**: 6 fases (Air→Drone→Motion→Bass→Beat→Melody); elke regel heeft `enterAt` (0–5); `compose()` maskeert per regel zodat lagen instromen en blijven (`mask`). Duur in **minuten** (`arc.minutes`, 1–20), cycli afgeleid van tempo. UI Engelstalig. (Preset-scènes én Jump-knoppen verwijderd — gebruiker bouwt zelf op met + Line.)
 - **One-shot**: `oneshot.js` — korte burst met `.mask("<1 0 0 0>")` bovenop lopende stack.
 
 ## Fasering
 
-1. **v1** (huidig): split layout, regels, scènes, debug-code, transport.
-2. **Later**: p5.waves / animatie op `#stage`; shared AudioContext-tap (algorave-patroon) voor audio-reactieve visuals.
+1. **v1**: split layout, regels, presets, debug-code, transport, master, auto-opbouw (6 gewogen fases) + jump.
+2. **v1.5 (huidig)**: golf-modulatie — p5.waves stuurt parameters (filters/reverb) als value-pattern (`js/modulation.js`). p5 + p5.waves laden al (als pure sampler). Volgende: variant-automatisering, live playhead/visuele weerslag.
+3. **Later**: dezelfde golven groot op `#stage`; shared AudioContext-tap (algorave-patroon) voor audio-reactieve visuals.
 3. **Embed**: `offcanvas-demo.html` + class `.left-strudel-panel` op animatiepagina’s.
 
 ## Conventies

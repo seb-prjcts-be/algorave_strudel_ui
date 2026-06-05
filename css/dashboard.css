@@ -215,6 +215,47 @@ body {
     border-color: var(--ls-fg);
 }
 
+.ls-btn--mod {
+    flex: 0 0 auto;
+    align-self: end;
+    padding: 0.3rem 0.5rem;
+    font-family: var(--ls-mono);
+    border: 1px solid var(--ls-border);
+    background: var(--ls-bg);
+    color: var(--ls-fg);
+}
+
+.ls-btn--mod.is-active {
+    background: var(--ls-fg);
+    color: var(--ls-bg);
+}
+
+.ls-mod {
+    margin: 0.3rem 0 0.5rem;
+    padding: 0.5rem;
+    border: 1px dashed var(--ls-border);
+    border-radius: var(--ls-radius);
+    background: var(--ls-bg-tile);
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.ls-mod-row {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.ls-mod-row .ls-field {
+    flex: 1 1 0;
+}
+
+.ls-mod-warn {
+    margin: 0;
+    font-size: 0.62rem;
+    color: var(--ls-fg-muted);
+}
+
 .ls-lines {
     flex: 1 1 auto;
     min-height: 0;
@@ -389,6 +430,21 @@ body {
     background: var(--ls-fg);
     color: var(--ls-bg);
     border-color: var(--ls-fg);
+}
+
+/* Live: de nu-klinkende variant tijdens cycling — een ring die meebeweegt. */
+.ls-btn--variant.is-live {
+    box-shadow: 0 0 0 2px var(--ls-fg);
+    position: relative;
+    z-index: 1;
+}
+
+.ls-variant-cycle {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
 }
 
 .ls-line-actions {

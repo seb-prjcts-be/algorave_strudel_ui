@@ -12,6 +12,24 @@ Elke regel = instrument (basis-chain) + tot 2 effecten + volumeregelaar. Checkbo
 
 Acht knoppen per zin — zoals sample-nummers na een klank in Strudel (`.n(0)` … `.n(7)`). Samples: `.n(i)`; synth: filter/density-shift; noten: transpose of andere toon. `beat`/`bass`/`lead` hebben elk een **patroon-bank** (8 patronen) i.p.v. `.n(i)` — zie `BEAT_PATTERNS`/`BASS_PATTERNS`/`LEAD_PATTERNS` in `variations.js`. Klik = preview + variant wordt actief in de gegenereerde code.
 
+## Genormaliseerde UI-waarden (0–1)
+
+Elke effect-regelaar staat in de UI op **0–1**; de échte waarde (Hz enz.) blijft in de state en in de gegenereerde Strudel-code. Mapping in `catalog/effects.js`: `normToValue`/`valueToNorm` (filters `scale:'log'` → musikaal; rest lineair), `roundEffectValue` (Hz → heel getal), `formatEffectDisplay` (hint-tekst naast de schuif, bv. "1500 Hz"). Geldt voor de effect-waarde én de mod min/max. Volume/master waren al 0–1; tempo (cpm) en opbouw-duur (min) blijven echte eenheden (betekenisvol). `compose()`/scenes/storage zijn onveranderd — alleen de UI-laag normaliseert.
+
+## ⚠ Cache-bust: `?v=N` op alle module-imports
+
+ESM-modules cachen hardnekkig (htdocs/Apache én browser). **Elke** import en de entry dragen een versie-query: `js/main.js?v=N`, `import … from './x.js?v=N'`, en `data/instruments.json?v=N`. **Na een module-wijziging: hoog N overal tegelijk op** (find/replace `?v=N`). Cruciaal: élke import van dezelfde module moet hetzelfde nummer hebben, anders laadt de browser twee instances (gedeelde state zoals `INSTRUMENTS` breekt). Huidige versie: **6**. Symptoom van een stale module: app laadt niet (0 regels, status blijft op HTML-default "Ready"), zonder console-fout — diagnose via dynamische import met try/catch. (Preview-server draait `http-server -c-1`, no-cache, ter ondersteuning.)
+
+## Catalogus als data (JSON)
+
+Instrumenten staan in **`data/instruments.json`**, geladen vóór de UI via `loadInstruments()` (await in `main.js`-`boot()`). Elk instrument: `{ id, label, tags, base, defaultVolume, variant? }`. Het **variant-recept** stuurt knoppen 0–7 en wordt geïnterpreteerd door `catalog/variations.js`:
+- `sampleIndex` → `.n(i)` · `transpose` (step) → `.transpose(i*step)` · `param` (fn, from, step, decimals) → `.fn(from+i*step)` · `notes` (items, template met `$`) · `patterns` (items[i] + optionele suffix).
+- Geen recept → standaard (`.n(i)` voor sample-tag, `.transpose(i*2)` voor note-tag).
+
+Nieuwe instrumenten = puur JSON, geen code. `instruments.js` houdt een mutabele array + `getInstrument`/`getInstruments`/`instrumentOptionsHtml`.
+
+⚠ **Valkuil:** niets mag `getInstrument`/`createLine` op módule-laadtijd aanroepen (instrumenten zijn dan nog niet geladen — async fetch). Alles moet draaien ná `loadInstruments()` (in `main.js`-`boot()`).
+
 ## Beat / bas / melodie
 
 Drie instrumenten maken de boog naar "beat met melodie" af:
@@ -29,17 +47,37 @@ In plaats van de opbouw handmatig te scripten, doet Strudel het via `mask`. **6 
 
 Mask zit alléén in `compose()` (niet in `buildLineChain`), zodat previews/bursts schoon blijven. `line.enterAt` clamp 0–5 in `storage.js`.
 
-## Presets (rij zonder "Scene"-label) + Jump
+## Verwijderd: preset-scènes + Jump
 
-Vier preset-knoppen (geen label meer). Klik = `applyScene` → `setState` → **én** `callbacks.ensurePlaying()` (laadt én start; behoudt de master). Keys: `build`, `pulse`, `lofi`, `drive` in `SCENES`.
-- **Build** — de volledige ~15-min boog, 9 lagen, kampvuur-intro → melodie-climax.
-- **Pulse** (9 min) / **Lo-Fi** (10 min) / **Drive** (9 min) — geaard.
+De preset-knoppen (Build/Pulse/Lo-Fi/Drive, `SCENES`/`applyScene`) én de Jump-fase-knoppen (`previewPhase`-logica) zijn verwijderd. De gebruiker bouwt regels zelf op (+ Line, standaard-state); de auto-opbouw (arc) en per-regel "Enter at" blijven het sturende mechanisme. `PHASE_LABELS`/`ARC_PHASES` blijven in gebruik voor de "Enter at"-dropdown en de regel-samenvatting.
 
-**Jump-knoppen** (één per fase, `#phase-btns`, gerenderd uit `PHASE_LABELS`): zet `state.previewPhase`. In `compose()` overschrijft een gezette `previewPhase` de tijd-mask → statische mix van alle lagen t/m die fase (geen `.mask`). Nogmaals op dezelfde fase = `previewPhase = null` = terug naar de getimede opbouw. `previewPhase` is transient (niet betekenisvol na herladen). Klik start ook auto via `ensurePlaying`.
+## Golf-modulatie (p5.waves → parameter)
+
+Een effect-slot kan een parameter laten **variëren via een p5.waves-golf** i.p.v. een vaste waarde. `js/modulation.js` bemonstert `Waves.createSampler({wave, range:[min,max]})` deterministisch op 16 punten over één periode (`sampler.period`, fallback 62.8319) → `modValuePattern()` bouwt `"v0 v1 … v15".slow(cycles)`. `compose()`/`buildLineChain` gebruikt dat patroon i.p.v. de statische waarde.
+
+- **Deterministisch** (geen `shift`): zelfde golf = zelfde curve → audio en (later) visual zijn identieke data.
+- **`Waves` is een browser-global** (p5 + p5.waves geladen in `index.html`, gebruikt als pure sampler — geen canvas). In Node ontbreekt het → val terug op de statische waarde (composer blijft Node-veilig).
+- Slot-schema: `{ effectId, value, mod?: { enabled, wave, min, max, cycles } }`. Bewaard in `storage.js`. Mod wordt gewist als het effect wisselt (bereik hoort bij het oude effect).
+- UI: `~`-toggle per modulatie-baar effect (niet voor none/slow/fast) → paneel met wave-keuze (34 waves), min, max, cycles. Stepped waves (`steps`, `stepped sine`) geven stapsgewijze "kleine fases"; gentle waves geven gladde sweeps.
+- p5.waves **v3.3.0** (`createGrid` verwijderd; `sampler.period` toegevoegd).
+
+**Volgende stappen (nog niet gebouwd):** variant-automatisering (golf → `n("<…>")`), live playhead/visuele weerslag op de UI (vereist cyclus-positie uit Strudel's klok), en uiteindelijk dezelfde golven groot op `#stage`.
+
+## Variant-cycling + live highlight
+
+Een regel kan z'n varianten traag laten wisselen over de maten: `line.variantCycle = { enabled, count, cycles }` — `count` opeenvolgende varianten vanaf `variantIndex`, elk `cycles` cycli vastgehouden. `buildLineChain` bouwt dan `arrange([N, base_v0], [N, base_v1], …)` (effecten/anker komen ná de arrange, gelden voor het geheel). `arrange` (niet `.slow`) houdt het tempo intact. Reproduceerbaar — werkt voor élk instrument (ook synth/sample, bv. crackle-density). UI: select "Cycle" (uit/2/3/4/6/8) + "hold" (cycli) onder de variant-knoppen.
+
+**Live highlight (klok = cycli!).** Cruciale vondst: **`getTime()` geeft de cyclus-positie terug, niet seconden** (gemeten: units/sec ≈ cpm/60). Dat is exact de scheduler-klok, dus een `requestAnimationFrame`-lus (`main.js`, alleen tijdens spelen) berekent `activeVariantAt(line, getTime())` — identieke formule als `arrange` (`floor((cycle mod count·N)/N)`) → de oplichtende variant-knop (`.is-live`, ring) loopt **exact in de maat** met de audio. Geen klok-offset, geen losse timer. Bron-klok van Strudel zit niet als cyclist-object in de globals; `getTime()` is de toegang.
+
+## Hoorbaar anker (octaaf-dubbel)
+
+Per toon-regel (`anchor: { enabled, octaves }`, 1–2 octaven). Idee: speel vol-bereik voor het publiek, maar geef de maker (die alleen ~150 Hz–1,5 kHz mono hoort) een houvast. `buildLineChain` wikkelt een toon-regel dan in `stack(origineel, origineel.transpose(octaves*12).gain(0.4))` — het origineel blijft vol-bereik, de zachte kopie trekt de toon het hoorvenster in. Alleen voor `note`-tag instrumenten (transpose op samples slaat nergens op). UI: select "Anchor (octaaf-dubbel)" uit/+1/+2 in de regel-grid. Bewaard in `storage.js`. Vult de FFT-visual-piste aan (beeld toont wat de oren missen).
 
 ## Master-volume
 
-Eén regelaar in het transport (`#master-slider`, 0–1, default 0.6), naast tempo. `compose()` sluit de hele `stack(...)` af met `.gain(master)` → plafond waar geen enkel onderdeel overheen kan. `masterGainFragment()` wordt óók op alle one-shots/previews in `oneshot.js` toegepast, zodat losse plotse geluiden nooit luider zijn dan de master. `state.master` blijft behouden bij scène-wissel (comfort-instelling) en wordt opgeslagen.
+Eén regelaar in het transport (`#master-slider`, 0–1, default 0.6), naast tempo. `compose()` sluit de hele `stack(...)` af met `.gain(master)`; `masterGainFragment()` wordt óók op alle one-shots/previews toegepast. `state.master` blijft behouden bij scène-wissel en wordt opgeslagen.
+
+**Echte master-limiter (`strudel-runtime.js`).** `.gain()` vermenigvuldigt per laag → de SOM kan alsnog boven het plafond stapelen (bv. extra lagen in Motion = luider). Superdough mixt alles in een verborgen master-gain → destination. We onderscheppen daarom éénmalig (vóór het eerste geluid) elke `connect(...)` naar `ctx.destination` en leiden die om via een `DynamicsCompressorNode` (bus-leveler: threshold −16, ratio 6). Zo loopt àlle audio door één limiter → luidere fases worden teruggetrokken, de master is een betrouwbaar gedeeld plafond. Geverifieerd via `comp.reduction` (in-path; Motion krijgt meer reductie dan Air). Debug-handle: `globalThis.__leftStrudelLimiter`.
 
 ## Ruis & textuur (geen machinegeweer)
 

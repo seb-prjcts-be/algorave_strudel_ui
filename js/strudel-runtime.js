@@ -8,9 +8,54 @@ const STRUDEL_SAMPLE_MAPS = [
 
 let runtimePromise = null;
 let samplesReady = false;
+let masterLimiter = null;
 
 export function isSamplesReady() {
     return samplesReady;
+}
+
+/**
+ * Echte master-limiter op de SOM van alle lagen. Superdough mixt alles in een
+ * interne master-gain → destination. Die master-node zit verborgen in een
+ * closure, dus we onderscheppen elke connectie naar `ctx.destination` en leiden
+ * die één keer om via een DynamicsCompressorNode (brickwall-achtig). Zo kan het
+ * totaal niet boven het plafond, hoeveel lagen er ook stapelen.
+ * Moet vóór het eerste geluid draaien (superdough verbindt lazy bij start).
+ */
+function installMasterLimiter(getCtx) {
+    let ctx;
+    try {
+        ctx = getCtx();
+    } catch {
+        return;
+    }
+    if (!ctx || masterLimiter) return;
+
+    const Proto = (typeof AudioNode !== 'undefined' && AudioNode.prototype) || null;
+    if (!Proto || typeof Proto.connect !== 'function') return;
+
+    // Bus-leveler: trekt luidere fases (meer lagen) terug naar het niveau van de
+    // stille intro, zodat de master een betrouwbaar, gelijkmatig plafond is.
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -16;  // dB — begint al ruim onder clipping te nivelleren
+    comp.ratio.value = 6;
+    comp.knee.value = 6;
+    comp.attack.value = 0.03;    // traag genoeg om niet op crackle-tikken te pompen
+    comp.release.value = 0.3;
+
+    const origConnect = Proto.connect;
+    // Wire de limiter zelf met de originele connect (anders verwijst hij naar zichzelf).
+    origConnect.call(comp, ctx.destination);
+
+    Proto.connect = function (target, ...rest) {
+        if (target === ctx.destination && this !== comp) {
+            return origConnect.call(this, comp, ...rest);
+        }
+        return origConnect.call(this, target, ...rest);
+    };
+
+    masterLimiter = comp;
+    globalThis.__leftStrudelLimiter = comp; // alleen voor debug/verificatie
 }
 
 export async function getStrudelRuntime() {
@@ -25,6 +70,7 @@ export async function getStrudelRuntime() {
         const evaluate = moduleApi.evaluate || globalThis.evaluate || namespaceApi.evaluate;
         const hush = moduleApi.hush || globalThis.hush || namespaceApi.hush;
         const samples = moduleApi.samples || globalThis.samples || namespaceApi.samples;
+        const getAudioContext = moduleApi.getAudioContext || globalThis.getAudioContext || namespaceApi.getAudioContext;
 
         if (
             typeof initStrudel !== 'function' ||
@@ -53,6 +99,15 @@ export async function getStrudelRuntime() {
                 }
             })
         );
+
+        // Master-limiter installeren vóór het eerste geluid.
+        if (typeof getAudioContext === 'function') {
+            try {
+                installMasterLimiter(getAudioContext);
+            } catch (err) {
+                console.warn('Master-limiter niet geïnstalleerd:', err);
+            }
+        }
 
         return {
             evaluate: (code) => Promise.resolve(evaluate(code)),
