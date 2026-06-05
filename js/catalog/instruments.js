@@ -7,8 +7,12 @@
 let INSTRUMENTS = [];
 let loadPromise = null;
 
+/** Pad naar de data, relatief aan deze module — niet aan de host-pagina, zodat
+ *  de module overal werkt (standalone én ingesloten) ongeacht waar de pagina staat. */
+const DEFAULT_URL = new URL('../../data/instruments.json?v=15', import.meta.url).href;
+
 /** Laad de catalogus één keer. Resolved met de instrument-array. */
-export function loadInstruments(url = 'data/instruments.json?v=14') {
+export function loadInstruments(url = DEFAULT_URL) {
     if (loadPromise) return loadPromise;
     loadPromise = fetch(url)
         .then((res) => {

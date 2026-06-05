@@ -18,8 +18,51 @@ import {
     getActivePresetName
 } from './storage.js?v=14';
 import { loadInstruments } from './catalog/instruments.js?v=14';
+import { PANEL_HTML } from './panel.js?v=15';
 
 const DEBOUNCE_MS = 300;
+
+// ── Self-mounting embed support ──
+// The module owns its styles, markup and optional deps, so a host page only needs
+// an offcanvas with a mount element and this one script. Standalone pages already
+// contain the panel markup (and wire their own styles/deps), so we self-provision
+// ONLY when there's nothing mounted yet — leaving standalone untouched.
+// Function declarations are hoisted, so these run before the queries below.
+if (!document.getElementById('left-strudel-panel')) {
+    injectModuleStyles();
+    loadOptionalDeps();
+    mountPanel();
+}
+
+/** Link the module's own stylesheet (which also @imports its fonts) once. */
+function injectModuleStyles() {
+    if (document.querySelector('link[data-left-strudel-styles]')) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = new URL('../css/dashboard.css?v=15', import.meta.url).href;
+    link.dataset.leftStrudelStyles = '';
+    document.head.appendChild(link);
+}
+
+/** p5.waves is an optional modulation source (window.Waves). Load it lazily; the
+ *  panel degrades gracefully to static values if it never arrives. */
+function loadOptionalDeps() {
+    if (window.Waves || document.querySelector('script[data-left-strudel-waves]')) return;
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/gh/seb-prjcts-be/p5.waves@v3.3.0/p5.waves.min.js';
+    s.async = true;
+    s.dataset.leftStrudelWaves = '';
+    document.head.appendChild(s);
+}
+
+/** Inject the panel markup into the host's mount point, unless markup is already
+ *  present (standalone pages inline it themselves). */
+function mountPanel() {
+    if (document.getElementById('left-strudel-panel')) return;
+    const mount = document.getElementById('left-strudel-mount')
+        || document.querySelector('[data-left-strudel-mount]');
+    if (mount) mount.innerHTML = PANEL_HTML;
+}
 
 let playing = false;
 let debounceTimer = null;

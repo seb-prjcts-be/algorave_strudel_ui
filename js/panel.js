@@ -1,0 +1,74 @@
+/**
+ * Left Strudel panel markup. Kept here (not in the host page) so the whole
+ * sound module — markup, styles, data and logic — lives under js/left-strudel/.
+ * `main.js` injects this into the host's mount element on boot.
+ */
+export const PANEL_HTML = `
+<div class="left-strudel-panel" id="left-strudel-panel">
+    <header class="ls-panel-header">
+        <p class="ls-subtitle">Layered sound — from texture to beat</p>
+    </header>
+
+    <div class="ls-transport">
+        <label class="ls-field ls-field--inline">
+            <span class="ls-label">Tempo</span>
+            <input type="range" id="cpm-slider" min="15" max="90" value="55" step="1">
+            <output id="cpm-value" for="cpm-slider">55</output>
+            <span class="ls-unit">cpm</span>
+        </label>
+        <label class="ls-field ls-field--inline">
+            <span class="ls-label">Master</span>
+            <input type="range" id="master-slider" min="0" max="1" value="0.6" step="0.02">
+            <output id="master-value" for="master-slider">0.6</output>
+        </label>
+        <div class="ls-transport-actions">
+            <button type="button" class="ls-btn ls-btn--primary" id="btn-play">▶ Start</button>
+            <button type="button" class="ls-btn" id="btn-stop" disabled>⏹ Stop</button>
+        </div>
+        <p class="ls-status" id="status" aria-live="polite">Ready</p>
+    </div>
+
+    <div class="ls-arc" aria-label="Auto build-up">
+        <label class="ls-arc-toggle">
+            <input type="checkbox" id="arc-enabled" checked>
+            <span class="ls-label">Auto build-up</span>
+        </label>
+        <label class="ls-field ls-field--inline">
+            <span class="ls-label">Build-up</span>
+            <input type="range" id="arc-minutes" min="1" max="20" value="12" step="1">
+            <output id="arc-minutes-value" for="arc-minutes">12</output>
+            <span class="ls-unit">min</span>
+        </label>
+        <p class="ls-arc-hint">Air → Drone → Motion → Bass → Beat → Melody. Each line enters "from" a phase and stays — spread across the full build-up.</p>
+        <div class="ls-phases" aria-label="Jump to build-up phase">
+            <span class="ls-label">Jump</span>
+            <div class="ls-phase-btns" id="phase-btns"></div>
+        </div>
+    </div>
+
+    <div class="ls-lines" id="lines-container" aria-label="Lines"></div>
+
+    <div class="ls-scenes" aria-label="Presets">
+        <span class="ls-label">Preset</span>
+        <div class="ls-scene-btns">
+            <button type="button" class="ls-btn ls-btn--scene ls-btn--primary" data-preset="gentle_jazz">Gentle Jazz</button>
+            <button type="button" class="ls-btn ls-btn--scene" data-preset="vibes_marimba">Vibes &amp; Marimba</button>
+            <button type="button" class="ls-btn ls-btn--scene" data-preset="upright_trio">Upright Trio</button>
+            <button type="button" class="ls-btn ls-btn--scene" data-preset="haze">Haze</button>
+        </div>
+    </div>
+
+    <div class="ls-panel-footer">
+        <button type="button" class="ls-btn ls-btn--ghost" id="btn-add-line">+ Line</button>
+        <button type="button" class="ls-btn ls-btn--ghost collapsed" id="btn-toggle-debug"
+            data-bs-toggle="collapse" data-bs-target="#debug-panel" aria-expanded="false"
+            aria-controls="debug-panel">Show code</button>
+    </div>
+
+    <div class="collapse" id="debug-panel">
+        <div class="ls-debug">
+            <pre class="ls-debug-code" id="debug-code"></pre>
+        </div>
+    </div>
+</div>
+`;

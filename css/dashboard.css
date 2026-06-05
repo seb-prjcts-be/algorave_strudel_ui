@@ -1,3 +1,7 @@
+/* Panel fonts — pulled in here so the module is self-sufficient when injected
+   into a host page that doesn't already load them. */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500&family=IBM+Plex+Mono:wght@300;400&display=swap');
+
 :root {
     --ls-bg: #f5f5f5;
     --ls-bg-tile: #f5f5f5;
@@ -54,6 +58,12 @@ body {
 }
 
 .left-strudel-panel {
+    /* Base typography for the panel. Standalone sets this on the body via .ls-app;
+       when embedded the host body differs, so it's set here too — otherwise bare
+       <output> value displays inherit the host's font size and render oversized. */
+    font-family: var(--ls-font);
+    font-weight: 300;
+    font-size: 0.75rem;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -664,47 +674,49 @@ body {
     letter-spacing: 0.02em;
 }
 
-/* Offcanvas embed (offcanvas-demo.html) */
-.ls-offcanvas-host .offcanvas.left-strudel-offcanvas {
+/* ── Offcanvas wrapper (embed) ──
+   Scoped to .left-strudel-offcanvas (no host body-class needed), so the module
+   drops into any Bootstrap offcanvas without the host adding a marker class. */
+.left-strudel-offcanvas {
     --bs-offcanvas-width: min(50vw, 420px);
     background: var(--ls-bg);
     color: var(--ls-fg);
     border-right: 1px solid var(--ls-border);
 }
 
-.ls-offcanvas-host .offcanvas.left-strudel-offcanvas .offcanvas-header {
+.left-strudel-offcanvas .offcanvas-header {
     border-bottom: 1px solid var(--ls-border);
 }
 
-.ls-offcanvas-host .offcanvas.left-strudel-offcanvas .btn-close {
+.left-strudel-offcanvas .btn-close {
     filter: none;
 }
 
-.ls-offcanvas-host .offcanvas-body {
+.left-strudel-offcanvas .offcanvas-body {
     padding: 0;
     overflow: hidden;
     display: flex;
     flex-direction: column;
 }
 
-.ls-offcanvas-host .left-strudel-panel {
+.left-strudel-offcanvas .left-strudel-panel {
     height: 100%;
 }
 
-.ls-offcanvas-host .ls-stage {
-    flex: 1;
-    height: 100vh;
-}
-
-::-webkit-scrollbar {
+/* Thin scrollbar. Scoped so it never leaks into a host page: standalone styles
+   via .ls-app (on the page body), embedded via the offcanvas wrapper. */
+.ls-app ::-webkit-scrollbar,
+.left-strudel-offcanvas ::-webkit-scrollbar {
     width: 6px;
 }
 
-::-webkit-scrollbar-track {
+.ls-app ::-webkit-scrollbar-track,
+.left-strudel-offcanvas ::-webkit-scrollbar-track {
     background: var(--ls-bg);
 }
 
-::-webkit-scrollbar-thumb {
+.ls-app ::-webkit-scrollbar-thumb,
+.left-strudel-offcanvas ::-webkit-scrollbar-thumb {
     background: var(--ls-fg-muted);
     border-radius: 0;
 }
