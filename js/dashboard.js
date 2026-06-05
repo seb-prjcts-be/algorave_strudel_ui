@@ -153,7 +153,8 @@ export class Dashboard {
             this.masterSlider.addEventListener('input', () => {
                 this.state.master = Number(this.masterSlider.value);
                 if (this.masterValue) this.masterValue.textContent = this.masterSlider.value;
-                this.callbacks.onChange();
+                // Master is een live mixer-greep: meteen toepassen, niet wachten op de maat.
+                this.callbacks.onChange({ immediate: true });
                 this.updateDebug();
             });
         }

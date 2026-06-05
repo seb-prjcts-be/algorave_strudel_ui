@@ -1,7 +1,7 @@
 /**
  * Left Strudel — orchestratie, transport, debounced evaluate.
  */
-import { Dashboard } from './dashboard.js?v=14';
+import { Dashboard } from './dashboard.js?v=15';
 import { compose, countActiveLines } from './composer.js?v=14';
 import { getStrudelRuntime, evaluateCode, stopAll, isSamplesReady } from './strudel-runtime.js?v=14';
 import {
@@ -66,6 +66,7 @@ function mountPanel() {
 
 let playing = false;
 let debounceTimer = null;
+let quantizeTimer = null;
 let persistTimer = null;
 
 const statusEl = document.getElementById('status');
@@ -96,9 +97,40 @@ async function refreshPlayback(dashboard) {
     }
 }
 
-function scheduleRefresh(dashboard) {
+/**
+ * Tijd (ms) tot de eerstvolgende cyclusgrens (de "1" van de volgende maat).
+ * getTime() (global, na runtime-init) geeft de fractionele cyclus-positie —
+ * dezelfde klok als de scheduler. cpm = cycli/minuut → seconden per cyclus.
+ * Zonder klok (nog niet gestart) → 0 = meteen.
+ */
+function msToNextCycle(dashboard) {
+    const cpm = Number(dashboard.getState().cpm) || 55;
+    let cyclesNow = 0;
+    try { if (typeof globalThis.getTime === 'function') cyclesNow = globalThis.getTime(); } catch (e) { /* nog geen klok */ }
+    const toNext = Math.ceil(cyclesNow) - cyclesNow; // 0..1 cyclus
+    return Math.max(0, toNext * (60 / cpm) * 1000);
+}
+
+/**
+ * Debounce bundelt snelle edits (slider-sleep); daarna wordt de evaluate
+ * gekwantiseerd naar de volgende cyclusgrens, zodat een wijziging strak op de
+ * downbeat instapt i.p.v. ergens mid-maat waar de evaluate toevallig landt.
+ *
+ * `opts.immediate` slaat de kwantisatie over (wél nog gedebounced): voor live
+ * mixer-grepen zoals master-volume, die meteen moeten reageren, los van de maat.
+ */
+function scheduleRefresh(dashboard, opts) {
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => refreshPlayback(dashboard), DEBOUNCE_MS);
+    clearTimeout(quantizeTimer);
+    const immediate = opts && opts.immediate;
+    debounceTimer = setTimeout(() => {
+        if (!playing) return;
+        if (immediate) {
+            refreshPlayback(dashboard);
+            return;
+        }
+        quantizeTimer = setTimeout(() => refreshPlayback(dashboard), msToNextCycle(dashboard));
+    }, DEBOUNCE_MS);
 }
 
 function currentPresetName() {
@@ -176,6 +208,7 @@ function initTransport(dashboard) {
     btnStop?.addEventListener('click', async () => {
         cancelBurstTimer();
         clearTimeout(debounceTimer);
+        clearTimeout(quantizeTimer);
         try {
             await stopAll();
         } catch (e) {
@@ -219,8 +252,8 @@ async function boot() {
     }
 
     dashboard = new Dashboard(panel || document.body, {
-    onChange: () => {
-        scheduleRefresh(dashboard);
+    onChange: (opts) => {
+        scheduleRefresh(dashboard, opts);
         schedulePersist(dashboard);
     },
     ensurePlaying: async () => {
