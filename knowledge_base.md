@@ -18,7 +18,7 @@ Elke effect-regelaar staat in de UI op **0–1**; de échte waarde (Hz enz.) bli
 
 ## ⚠ Cache-bust: `?v=N` op alle module-imports
 
-ESM-modules cachen hardnekkig (htdocs/Apache én browser). **Elke** import en de entry dragen een versie-query: `js/main.js?v=N`, `import … from './x.js?v=N'`, en `data/instruments.json?v=N`. **Na een module-wijziging: hoog N overal tegelijk op** (find/replace `?v=N`). Cruciaal: élke import van dezelfde module moet hetzelfde nummer hebben, anders laadt de browser twee instances (gedeelde state zoals `INSTRUMENTS` breekt). Huidige versie: **6**. Symptoom van een stale module: app laadt niet (0 regels, status blijft op HTML-default "Ready"), zonder console-fout — diagnose via dynamische import met try/catch. (Preview-server draait `http-server -c-1`, no-cache, ter ondersteuning.)
+ESM-modules cachen hardnekkig (htdocs/Apache én browser). **Elke** import en de entry dragen een versie-query: `js/main.js?v=N`, `import … from './x.js?v=N'`, en `data/instruments.json?v=N`. **Na een module-wijziging: hoog N overal tegelijk op** (find/replace `?v=N`). Cruciaal: élke import van dezelfde module moet hetzelfde nummer hebben, anders laadt de browser twee instances (gedeelde state zoals `INSTRUMENTS` breekt). Huidige versie: **14**. Symptoom van een stale module: app laadt niet (0 regels, status blijft op HTML-default "Ready"), zonder console-fout — diagnose via dynamische import met try/catch. (Preview-server draait `http-server -c-1`, no-cache, ter ondersteuning.)
 
 ## Catalogus als data (JSON)
 
@@ -29,6 +29,20 @@ Instrumenten staan in **`data/instruments.json`**, geladen vóór de UI via `loa
 Nieuwe instrumenten = puur JSON, geen code. `instruments.js` houdt een mutabele array + `getInstrument`/`getInstruments`/`instrumentOptionsHtml`.
 
 ⚠ **Valkuil:** niets mag `getInstrument`/`createLine` op módule-laadtijd aanroepen (instrumenten zijn dan nog niet geladen — async fetch). Alles moet draaien ná `loadInstruments()` (in `main.js`-`boot()`).
+
+## Vaste presets (i.p.v. save/load)
+
+Ingebouwde presets in `composer.js` `PRESETS` (platte regel-specs); `applyPreset(id)` mapt ze door `createLine` bij toepassen (niet op laadtijd). UI: vaste preset-knoppen (`[data-preset]`, gebonden in `dashboard.bindGlobal`) → setState + `ensurePlaying` (laden én starten). De vrije Save/Load-balk is verwijderd. `createDefaultState` = `applyPreset('gentle_jazz')`. Autosave naar `localStorage:last` blijft (continuïteit); de preset-knop reset altijd naar de baseline. Presets: **gentle_jazz** (baseline), **vibes_marimba** (mallet/vibrafoon-jazz), **upright_trio** (walking upright + swung groove + keys/melodie), **haze** (ambient, beatloos: pads/drone/sub/bell/chirps).
+
+## Default-compositie: jazz in laagjes
+
+`createDefaultState` (dashboard.js) is een gecureerde, gelaagde opbouw (geen presets meer, dit is het startpunt): **Air** warme kamertoon (warm_drone) → **Drone** jazz-akkoorden (`keys`, Cm7-progressie, driehoek, lang) → **Motion** takjes (`twigs`, organische perc met variant-cycling) + zachte vogels → **Bass** warme dorische bas → **Beat** losse swung jazz-groove (`groove`, `swingBy(1/3,4)`) → **Melody** dorisch melodietje. cpm 52. Bas/melodie staan in **dorian** (jazzy); bas is driehoek (warm, niet ruw). Tuning/kwaliteit van de klank weegt even zwaar als features.
+
+**Uitgebreid sound-vocabularium (24 instrumenten).** Melodisch/harmonisch: `vibes`, `bell`, `mallet` (Marimba), `keys`, `warmpad`, `chirps` (abstracte synth-pings i.p.v. uncanny vogels). Bas: `bass` (warme driehoek), `upright` (walking, zaagtand-pluk), `sub` (lage sine). Percussie: `groove` (swung kit), `beat`, `twigs` & `hands` — **synth-gebaseerd** (resp. korte driehoek-klikjes en sine-membranen), géén samples.
+
+⚠ **Sample-betrouwbaarheid.** In de geladen `github:tidalcycles/dirt-samples` zijn **`rim` en `oh` NIET aanwezig** (geven "sound not found", spelen stil). Betrouwbaar gebleken: `bd sd hh cp` + textuur-samples `wind birds pad`. Daarom: drumkit op `bd/sd/hh/cp`, en organische percussie als **synth** (stembaar, in het hoorvenster, nul sample-risico). Test nieuwe sample-namen vóór gebruik (evalueren + console op "not found").
+
+**Opslag-versie** (`storage.js` `VERSION`) opgehoogd → oudere `localStorage`-states worden bij laden weggegooid (`loadStateByName` geeft null bij mismatch), zodat de nieuwe default verschijnt i.p.v. een stale restje.
 
 ## Beat / bas / melodie
 
@@ -47,9 +61,11 @@ In plaats van de opbouw handmatig te scripten, doet Strudel het via `mask`. **6 
 
 Mask zit alléén in `compose()` (niet in `buildLineChain`), zodat previews/bursts schoon blijven. `line.enterAt` clamp 0–5 in `storage.js`.
 
-## Verwijderd: preset-scènes + Jump
+## Jump = live controle (preset-scènes verwijderd)
 
-De preset-knoppen (Build/Pulse/Lo-Fi/Drive, `SCENES`/`applyScene`) én de Jump-fase-knoppen (`previewPhase`-logica) zijn verwijderd. De gebruiker bouwt regels zelf op (+ Line, standaard-state); de auto-opbouw (arc) en per-regel "Enter at" blijven het sturende mechanisme. `PHASE_LABELS`/`ARC_PHASES` blijven in gebruik voor de "Enter at"-dropdown en de regel-samenvatting.
+De preset-knoppen (Build/Pulse/Lo-Fi/Drive, `SCENES`/`applyScene`) zijn verwijderd; de gebruiker bouwt regels zelf op (+ Line). **De Jump-knoppen zijn bewust behouden/teruggezet** — ze zijn de live menselijke controle over de opbouw (zonder code).
+
+**Jump-knoppen** (één per fase, `#phase-btns`, gerenderd uit `PHASE_LABELS`): zet `state.previewPhase`. In `compose()` overschrijft een gezette `previewPhase` de tijd-mask → statische mix van alle lagen t/m die fase (geen `.mask`). Nogmaals op dezelfde fase = `previewPhase = null` = terug naar de getimede opbouw. Transient (niet bewaard). Klik start ook auto via `ensurePlaying`.
 
 ## Golf-modulatie (p5.waves → parameter)
 
@@ -96,6 +112,10 @@ Burst: `stack(main, burstLine)` met `.mask("<1 0 0 0 0 0 0 0>")`; na interval (a
 ## Offcanvas
 
 Zelfde `#left-strudel-panel` markup; zie `offcanvas-demo.html`. JS-modules ongewijzigd — alleen wrapper wijzigt.
+
+## Inklappen van niet-gebruikte regels
+
+Een regel uitschakelen (Aan-checkbox uit) **klapt 'm in** (Bootstrap `Collapse.hide()`), inschakelen klapt 'm uit. `openLineIds` bevat bij (her)laden alléén ingeschakelde regels, dus uitgeschakelde regels starten ingeklapt. Header + samenvatting blijven zichtbaar.
 
 ## Bootstrap collapse
 

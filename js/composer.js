@@ -1,10 +1,10 @@
 /**
  * UI-state → Strudel code (setcpm + stack).
  */
-import { getInstrument } from './catalog/instruments.js?v=6';
-import { getEffect } from './catalog/effects.js?v=6';
-import { buildInstrumentBase } from './catalog/variations.js?v=6';
-import { modValuePattern } from './modulation.js?v=6';
+import { getInstrument } from './catalog/instruments.js?v=14';
+import { getEffect } from './catalog/effects.js?v=14';
+import { buildInstrumentBase } from './catalog/variations.js?v=14';
+import { modValuePattern } from './modulation.js?v=14';
 
 /** Aantal fases in de auto-opbouw — 6 voor een fijnmazige opbouw over minuten. */
 export const ARC_PHASES = 6;
@@ -227,17 +227,25 @@ export function buildLineChain(line, variantOverride) {
     return chain;
 }
 
-export function buildStackBody(lines, arc, cpm) {
+export function buildStackBody(lines, arc, cpm, previewPhase = null) {
     if (!lines.length) {
         return 'silence';
     }
     const a = normalizeArc(arc);
-    const cycleArr = arcPhaseCycleArray(cpm, a.minutes);
+    const preview = previewPhase != null;
+    const cycleArr = preview ? null : arcPhaseCycleArray(cpm, a.minutes);
 
     return lines
         .map((line) => {
             const chain = buildLineChain(line);
             const enterAt = clampPhase(line.enterAt ?? 0);
+
+            // Sprong naar fase: statische mix t/m die fase, geen tijd-mask.
+            if (preview) {
+                const audible = line.enabled && enterAt <= previewPhase;
+                return audible ? `  ${chain}` : `  // ${chain}`;
+            }
+
             const masked = a.enabled ? chain + arcMaskFragment(enterAt, cycleArr) : chain;
             return line.enabled ? `  ${masked}` : `  // ${masked}`;
         })
@@ -256,11 +264,17 @@ export function masterGainFragment(state) {
 
 export function compose(state) {
     const cpm = Number(state.cpm) || 55;
-    const active = state.lines.filter((l) => l.enabled);
+    const previewPhase = state.previewPhase != null ? clampPhase(state.previewPhase) : null;
+
+    const active = state.lines.filter((l) => {
+        if (!l.enabled) return false;
+        if (previewPhase != null) return clampPhase(l.enterAt ?? 0) <= previewPhase;
+        return true;
+    });
     if (!active.length) {
         return `setcpm(${cpm})\n\nsilence`;
     }
-    const body = buildStackBody(state.lines, state.arc, cpm);
+    const body = buildStackBody(state.lines, state.arc, cpm, previewPhase);
     return `setcpm(${cpm})\n\nstack(\n${body}\n)${masterGainFragment(state)}`;
 }
 
@@ -271,6 +285,87 @@ export function composeLineForOneShot(line) {
 
 export function countActiveLines(lines) {
     return lines.filter((l) => l.enabled).length;
+}
+
+/**
+ * Vaste, ingebouwde presets — platte regel-specs (géén createLine op laadtijd,
+ * dat zou instrumenten raken die nog niet geladen zijn). `applyPreset` mapt ze
+ * pas door createLine bij toepassen.
+ */
+export const PRESETS = {
+    gentle_jazz: {
+        label: 'Gentle Jazz',
+        cpm: 52,
+        master: DEFAULT_MASTER,
+        arc: { enabled: true, minutes: 12 },
+        lines: [
+            { instrumentId: 'warm_drone', volume: 0.28, variantIndex: 0, enterAt: 0, effects: [{ effectId: 'lpf', value: 1400 }, { effectId: 'room', value: 0.6 }] },
+            { instrumentId: 'keys', volume: 0.22, variantIndex: 0, enterAt: 1, effects: [{ effectId: 'lpf', value: 1600 }, { effectId: 'room', value: 0.55 }] },
+            { instrumentId: 'twigs', volume: 0.26, variantIndex: 1, enterAt: 2, variantCycle: { enabled: true, count: 3, cycles: 4 }, effects: [{ effectId: 'lpf', value: 2500 }, { effectId: 'room', value: 0.4 }] },
+            { instrumentId: 'chirps', volume: 0.18, enterAt: 2, effects: [{ effectId: 'delay', value: 0.35 }, { effectId: 'room', value: 0.55 }] },
+            { instrumentId: 'bass', volume: 0.3, variantIndex: 1, enterAt: 3, effects: [{ effectId: 'lpf', value: 500 }, { effectId: 'room', value: 0.2 }] },
+            { instrumentId: 'groove', volume: 0.38, variantIndex: 2, enterAt: 4, effects: [{ effectId: 'lpf', value: 3000 }, { effectId: 'room', value: 0.4 }] },
+            { instrumentId: 'lead', volume: 0.32, variantIndex: 0, enterAt: 5, effects: [{ effectId: 'delay', value: 0.4 }, { effectId: 'room', value: 0.5 }] }
+        ]
+    },
+
+    vibes_marimba: {
+        label: 'Vibes & Marimba',
+        cpm: 54,
+        master: DEFAULT_MASTER,
+        arc: { enabled: true, minutes: 12 },
+        lines: [
+            { instrumentId: 'warm_drone', volume: 0.24, variantIndex: 0, enterAt: 0, effects: [{ effectId: 'lpf', value: 1300 }, { effectId: 'room', value: 0.6 }] },
+            { instrumentId: 'mallet', volume: 0.3, variantIndex: 0, enterAt: 1, variantCycle: { enabled: true, count: 3, cycles: 4 }, effects: [{ effectId: 'delay', value: 0.2 }, { effectId: 'room', value: 0.45 }] },
+            { instrumentId: 'warmpad', volume: 0.18, variantIndex: 0, enterAt: 2, effects: [{ effectId: 'lpf', value: 1000 }, { effectId: 'room', value: 0.6 }] },
+            { instrumentId: 'vibes', volume: 0.3, variantIndex: 0, enterAt: 3, effects: [{ effectId: 'delay', value: 0.3 }, { effectId: 'room', value: 0.55 }] },
+            { instrumentId: 'upright', volume: 0.3, variantIndex: 1, enterAt: 4, effects: [{ effectId: 'lpf', value: 500 }, { effectId: 'room', value: 0.2 }] },
+            { instrumentId: 'groove', volume: 0.3, variantIndex: 1, enterAt: 5, effects: [{ effectId: 'lpf', value: 3000 }, { effectId: 'room', value: 0.4 }] }
+        ]
+    },
+
+    upright_trio: {
+        label: 'Upright Trio',
+        cpm: 58,
+        master: DEFAULT_MASTER,
+        arc: { enabled: true, minutes: 10 },
+        lines: [
+            { instrumentId: 'warm_drone', volume: 0.2, variantIndex: 0, enterAt: 0, effects: [{ effectId: 'lpf', value: 1300 }, { effectId: 'room', value: 0.55 }] },
+            { instrumentId: 'keys', volume: 0.22, variantIndex: 0, enterAt: 1, effects: [{ effectId: 'lpf', value: 1600 }, { effectId: 'room', value: 0.5 }] },
+            { instrumentId: 'upright', volume: 0.32, variantIndex: 3, enterAt: 2, effects: [{ effectId: 'lpf', value: 550 }, { effectId: 'room', value: 0.2 }] },
+            { instrumentId: 'groove', volume: 0.34, variantIndex: 3, enterAt: 3, effects: [{ effectId: 'lpf', value: 3500 }, { effectId: 'room', value: 0.4 }] },
+            { instrumentId: 'lead', volume: 0.3, variantIndex: 2, enterAt: 4, effects: [{ effectId: 'delay', value: 0.35 }, { effectId: 'room', value: 0.5 }] },
+            { instrumentId: 'vibes', volume: 0.26, variantIndex: 2, enterAt: 5, effects: [{ effectId: 'delay', value: 0.3 }, { effectId: 'room', value: 0.55 }] }
+        ]
+    },
+
+    haze: {
+        label: 'Haze',
+        cpm: 46,
+        master: DEFAULT_MASTER,
+        arc: { enabled: true, minutes: 14 },
+        // Ambient, beatloos — pads, drone, sub, abstracte sparkles.
+        lines: [
+            { instrumentId: 'warm_drone', volume: 0.26, variantIndex: 0, enterAt: 0, effects: [{ effectId: 'lpf', value: 1200 }, { effectId: 'room', value: 0.65 }] },
+            { instrumentId: 'warmpad', volume: 0.2, variantIndex: 0, enterAt: 1, effects: [{ effectId: 'lpf', value: 900 }, { effectId: 'room', value: 0.6 }] },
+            { instrumentId: 'pink', volume: 0.12, variantIndex: 0, enterAt: 1, effects: [{ effectId: 'lpf', value: 500 }, { effectId: 'room', value: 0.5 }] },
+            { instrumentId: 'sub', volume: 0.26, variantIndex: 0, enterAt: 2, effects: [{ effectId: 'room', value: 0.35 }, { effectId: 'none', value: 0 }] },
+            { instrumentId: 'bell', volume: 0.2, variantIndex: 0, enterAt: 3, effects: [{ effectId: 'delay', value: 0.5 }, { effectId: 'room', value: 0.65 }] },
+            { instrumentId: 'chirps', volume: 0.16, variantIndex: 0, enterAt: 4, effects: [{ effectId: 'delay', value: 0.4 }, { effectId: 'room', value: 0.6 }] },
+            { instrumentId: 'twigs', volume: 0.16, variantIndex: 0, enterAt: 5, variantCycle: { enabled: true, count: 3, cycles: 6 }, effects: [{ effectId: 'room', value: 0.55 }, { effectId: 'sparse', value: 0.5 }] }
+        ]
+    }
+};
+
+export function applyPreset(id) {
+    const p = PRESETS[id];
+    if (!p) return null;
+    return {
+        cpm: p.cpm,
+        master: p.master ?? DEFAULT_MASTER,
+        arc: { ...(p.arc || DEFAULT_ARC) },
+        lines: p.lines.map((l) => createLine(l))
+    };
 }
 
 

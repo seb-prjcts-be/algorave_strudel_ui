@@ -4,7 +4,7 @@
  * - optional named presets via UI / URL param (?preset=naam)
  */
 
-const VERSION = 1;
+const VERSION = 2;
 const LAST_KEY = 'left_strudel:last';
 const PRESET_PREFIX = 'left_strudel:preset:';
 const ACTIVE_KEY = 'left_strudel:activePreset';
@@ -110,10 +110,8 @@ export function loadStateByName(name) {
     if (!raw) return null;
     const parsed = safeJsonParse(raw);
     if (!parsed) return null;
-    if (parsed.version !== VERSION) {
-        // We proberen toch nog te normalizen; schema kan licht veranderd zijn.
-        return normalizeLoadedState(parsed);
-    }
+    // Oudere opslag-versie: laten vallen, zodat de (nieuwe) default-compositie laadt.
+    if (parsed.version !== VERSION) return null;
     return normalizeLoadedState(parsed);
 }
 

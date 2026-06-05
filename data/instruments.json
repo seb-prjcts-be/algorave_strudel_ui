@@ -19,7 +19,31 @@
     { "id": "triangle_melody", "label": "Triangle melody", "tags": ["note"], "base": "note(\"<c4 eb4 g4 bb3>\").s(\"triangle\").slow(2)", "defaultVolume": 0.35,
       "variant": { "type": "transpose", "step": 2 } },
 
-    { "id": "beat", "label": "Beat", "tags": ["sample", "drums"], "base": "s(\"bd ~ sd ~, hh*8\")", "defaultVolume": 0.6,
+    { "id": "keys", "label": "Keys (jazz)", "tags": ["note", "keys"], "base": "note(\"<[c3,eb3,g3,bb3] [f2,ab2,c3,eb3] [g2,bb2,d3,f3] [c3,eb3,g3,bb3]>\").s(\"triangle\").attack(0.05).release(1.2).slow(2)", "defaultVolume": 0.22,
+      "variant": { "type": "transpose", "step": 2 } },
+    { "id": "groove", "label": "Groove (jazz)", "tags": ["sample", "drums"], "base": "s(\"bd ~ ~ ~ ~ ~ bd ~, ~ ~ sd ~ ~ ~ sd ~, hh ~ hh ~ hh ~ hh ~\").swingBy(1/3, 4)", "defaultVolume": 0.4,
+      "variant": { "type": "patterns", "suffix": ".swingBy(1/3, 4)", "items": [
+        "s(\"hh ~ hh ~ hh ~ hh ~\")",
+        "s(\"bd ~ ~ ~ ~ ~ ~ ~, hh ~ hh ~ hh ~ hh ~\")",
+        "s(\"bd ~ ~ ~ ~ ~ bd ~, ~ ~ sd ~ ~ ~ sd ~, hh ~ hh ~ hh ~ hh ~\")",
+        "s(\"bd ~ ~ ~ ~ ~ bd ~, ~ ~ sd ~, hh ~ [hh hh] ~ hh ~ [hh hh] ~\")",
+        "s(\"bd ~ bd ~ ~ ~ bd ~, ~ ~ sd ~ ~ sd ~ ~, hh ~ [hh hh] ~ hh ~ [hh hh] ~\")",
+        "s(\"bd ~ ~ bd ~ ~ bd ~, ~ ~ sd ~, [hh hh] ~ hh ~ [hh hh] ~ hh ~\")",
+        "s(\"bd ~ ~ ~ ~ ~ bd ~, ~ ~ sd ~ ~ ~ sd ~, hh*8\")",
+        "s(\"bd ~ bd ~ ~ ~ bd ~, ~ cp ~ ~ ~ cp ~ ~, hh ~ [hh hh] ~ hh ~ [hh hh] ~\")"
+      ] } },
+    { "id": "twigs", "label": "Twigs", "tags": ["note", "perc"], "base": "note(\"c5 ~ ~ g4 ~ ~ ~ ~\").s(\"triangle\").attack(0.002).decay(0.05).sustain(0).release(0.07)", "defaultVolume": 0.26,
+      "variant": { "type": "patterns", "suffix": ".s(\"triangle\").attack(0.002).decay(0.05).sustain(0).release(0.07)", "items": [
+        "note(\"c5 ~ ~ ~ ~ ~ ~ ~\")",
+        "note(\"c5 ~ ~ ~ g4 ~ ~ ~\")",
+        "note(\"~ ~ eb5 ~ ~ ~ g4 ~\")",
+        "note(\"c5 ~ ~ g4 ~ ~ bb4 ~\")",
+        "note(\"c5 ~ eb5 ~ ~ g4 ~ d5\")",
+        "note(\"c5 c5 ~ g4 ~ ~ eb5 ~\")",
+        "note(\"c5 ~ d5 ~ g4 ~ c5 ~\")",
+        "note(\"c5 ~ ~ g4 ~ eb5 ~ bb4\")"
+      ] } },
+    { "id": "beat", "label": "Beat", "tags": ["sample", "drums"], "base": "s(\"bd ~ sd ~, hh*8\")", "defaultVolume": 0.42,
       "variant": { "type": "patterns", "items": [
         "s(\"bd*4\")",
         "s(\"bd ~ sd ~\")",
@@ -27,30 +51,74 @@
         "s(\"bd*2 ~ sd ~, hh*8\")",
         "s(\"bd ~ ~ bd ~ ~ sd ~, hh*8\")",
         "s(\"bd sd, hh*16\")",
-        "s(\"[bd bd] ~ sd ~, hh*8, ~ ~ ~ oh\")",
+        "s(\"[bd bd] ~ sd ~, hh*8, ~ ~ ~ cp\")",
         "s(\"bd*4, ~ cp ~ cp, hh*8\")"
       ] } },
-    { "id": "bass", "label": "Bass", "tags": ["note", "bass"], "base": "n(\"0 0 3 0\").scale(\"c2:minor\").s(\"sawtooth\").lpf(700).release(0.18)", "defaultVolume": 0.45,
-      "variant": { "type": "patterns", "suffix": ".s(\"sawtooth\").release(0.18)", "items": [
-        "n(\"0 ~ 0 ~\").scale(\"c2:minor\")",
-        "n(\"0 0 3 0\").scale(\"c2:minor\")",
-        "n(\"0 0 5 3\").scale(\"c2:minor\")",
-        "n(\"0 3 5 7\").scale(\"c2:minor\")",
-        "n(\"0 ~ 7 ~ 0 ~ 3 ~\").scale(\"c2:minor\")",
-        "n(\"<0 3> <5 7>\").scale(\"c2:minor\")",
-        "n(\"0 0 ~ 0 3 ~ 0 5\").scale(\"c2:minor\")",
-        "n(\"0 7 5 3\").scale(\"c2:minor\")"
+    { "id": "bass", "label": "Bass", "tags": ["note", "bass"], "base": "n(\"0 0 3 0\").scale(\"c2:dorian\").s(\"triangle\").lpf(500).attack(0.02).release(0.35)", "defaultVolume": 0.32,
+      "variant": { "type": "patterns", "suffix": ".s(\"triangle\").lpf(500).attack(0.02).release(0.35)", "items": [
+        "n(\"0 ~ 0 ~\").scale(\"c2:dorian\")",
+        "n(\"0 0 3 0\").scale(\"c2:dorian\")",
+        "n(\"0 0 5 3\").scale(\"c2:dorian\")",
+        "n(\"0 3 5 7\").scale(\"c2:dorian\")",
+        "n(\"0 ~ 7 ~ 0 ~ 3 ~\").scale(\"c2:dorian\")",
+        "n(\"<0 3> <5 7>\").scale(\"c2:dorian\")",
+        "n(\"0 0 ~ 0 3 ~ 0 5\").scale(\"c2:dorian\")",
+        "n(\"0 7 5 3\").scale(\"c2:dorian\")"
       ] } },
-    { "id": "lead", "label": "Melody", "tags": ["note", "melody"], "base": "n(\"0 2 4 2\").scale(\"c4:minor\").s(\"triangle\").slow(2)", "defaultVolume": 0.4,
-      "variant": { "type": "patterns", "suffix": ".s(\"triangle\").slow(2)", "items": [
-        "n(\"0 2 4 2\").scale(\"c4:minor\")",
-        "n(\"4 3 2 0\").scale(\"c4:minor\")",
-        "n(\"0 2 4 7 4 2\").scale(\"c4:minor\")",
-        "n(\"7 4 2 0\").scale(\"c4:minor\")",
-        "n(\"0 ~ 4 ~ 7 ~ 4 ~\").scale(\"c4:minor\")",
-        "n(\"<0 4> <2 7>\").scale(\"c4:minor\")",
-        "n(\"0 1 2 3 4 5 6 7\").scale(\"c4:minor\")",
-        "n(\"4 7 4 2 0 2\").scale(\"c4:minor\")"
+    { "id": "lead", "label": "Melody", "tags": ["note", "melody"], "base": "n(\"0 2 4 2\").scale(\"c4:dorian\").s(\"triangle\").slow(2).attack(0.01).release(0.4)", "defaultVolume": 0.36,
+      "variant": { "type": "patterns", "suffix": ".s(\"triangle\").slow(2).attack(0.01).release(0.4)", "items": [
+        "n(\"0 2 4 2\").scale(\"c4:dorian\")",
+        "n(\"4 3 2 0\").scale(\"c4:dorian\")",
+        "n(\"0 2 4 7 4 2\").scale(\"c4:dorian\")",
+        "n(\"7 4 2 0\").scale(\"c4:dorian\")",
+        "n(\"0 ~ 4 ~ 7 ~ 4 ~\").scale(\"c4:dorian\")",
+        "n(\"<0 4> <2 7>\").scale(\"c4:dorian\")",
+        "n(\"0 1 2 3 4 5 6 7\").scale(\"c4:dorian\")",
+        "n(\"4 7 4 2 0 2\").scale(\"c4:dorian\")"
+      ] } },
+
+    { "id": "vibes", "label": "Vibraphone", "tags": ["note", "keys"], "base": "n(\"0 2 4 7 4 2\").scale(\"c4:dorian\").s(\"triangle\").attack(0.005).decay(0.4).sustain(0.1).release(0.6).slow(2)", "defaultVolume": 0.3, "variant": { "type": "transpose", "step": 2 } },
+    { "id": "bell", "label": "Bell / music box", "tags": ["note"], "base": "n(\"0 ~ 4 ~ 7 ~ ~ ~\").scale(\"c5:dorian\").s(\"sine\").attack(0.005).decay(0.8).sustain(0).release(0.9).slow(2)", "defaultVolume": 0.2, "variant": { "type": "transpose", "step": 2 } },
+    { "id": "mallet", "label": "Marimba", "tags": ["note"], "base": "n(\"0 2 4 0 7 4\").scale(\"c3:dorian\").s(\"triangle\").attack(0.002).decay(0.25).sustain(0).release(0.3)", "defaultVolume": 0.3, "variant": { "type": "transpose", "step": 2 } },
+    { "id": "chirps", "label": "Chirps (abstract)", "tags": ["note"], "base": "n(\"7 ~ ~ 9 ~ ~ 11 ~\").scale(\"c5:dorian\").s(\"triangle\").attack(0.002).decay(0.15).sustain(0).release(0.25).degradeBy(0.4)", "defaultVolume": 0.18, "variant": { "type": "transpose", "step": 2 } },
+
+    { "id": "upright", "label": "Upright bass", "tags": ["note", "bass"], "base": "n(\"0 2 4 5\").scale(\"c2:dorian\").s(\"sawtooth\").lpf(450).attack(0.01).decay(0.3).sustain(0.2).release(0.2)", "defaultVolume": 0.32,
+      "variant": { "type": "patterns", "suffix": ".s(\"sawtooth\").lpf(450).attack(0.01).decay(0.3).sustain(0.2).release(0.2)", "items": [
+        "n(\"0 ~ 0 ~\").scale(\"c2:dorian\")",
+        "n(\"0 2 4 5\").scale(\"c2:dorian\")",
+        "n(\"0 4 5 7\").scale(\"c2:dorian\")",
+        "n(\"0 2 3 4 5 4 2 0\").scale(\"c2:dorian\")",
+        "n(\"0 ~ 4 ~ 5 ~ 7 ~\").scale(\"c2:dorian\")",
+        "n(\"0 5 4 2\").scale(\"c2:dorian\")",
+        "n(\"0 2 4 5 7 5 4 2\").scale(\"c2:dorian\")",
+        "n(\"<0 4> <5 2>\").scale(\"c2:dorian\")"
+      ] } },
+    { "id": "sub", "label": "Sub bass", "tags": ["note", "bass"], "base": "note(\"c2\").s(\"sine\").attack(0.05).release(0.4)", "defaultVolume": 0.3,
+      "variant": { "type": "notes", "items": ["c2","d2","eb2","f2","g2","a2","bb2","c3"], "template": "note(\"$\").s(\"sine\").attack(0.05).release(0.4)" } },
+
+    { "id": "warmpad", "label": "Warm pad", "tags": ["note", "keys"], "base": "note(\"<[c3,eb3,g3] [f2,ab2,c3] [g2,bb2,d3]>\").s(\"sawtooth\").lpf(800).attack(0.8).release(1.5).slow(2)", "defaultVolume": 0.2, "variant": { "type": "transpose", "step": 2 } },
+
+    { "id": "shaker", "label": "Shaker", "tags": ["sample", "perc"], "base": "s(\"hh ~ hh hh ~ hh hh ~\").lpf(3500)", "defaultVolume": 0.22,
+      "variant": { "type": "patterns", "suffix": ".lpf(3500)", "items": [
+        "s(\"hh ~ hh ~ hh ~ hh ~\")",
+        "s(\"hh ~ hh hh ~ hh hh ~\")",
+        "s(\"hh hh ~ hh hh ~ hh hh\")",
+        "s(\"hh*8\")",
+        "s(\"~ hh ~ hh ~ hh ~ hh\")",
+        "s(\"hh ~ [hh hh] ~ hh ~ [hh hh] ~\")",
+        "s(\"hh*4\")",
+        "s(\"hh ~ hh ~ [hh hh] ~ hh ~\")"
+      ] } },
+    { "id": "hands", "label": "Hand perc", "tags": ["note", "perc"], "base": "note(\"c3 ~ g2 ~ ~ c3 ~ g2\").s(\"sine\").attack(0.004).decay(0.18).sustain(0).release(0.2)", "defaultVolume": 0.3,
+      "variant": { "type": "patterns", "suffix": ".s(\"sine\").attack(0.004).decay(0.18).sustain(0).release(0.2)", "items": [
+        "note(\"c3 ~ ~ ~ g2 ~ ~ ~\")",
+        "note(\"c3 ~ g2 ~ ~ c3 ~ g2\")",
+        "note(\"c3 ~ ~ eb3 ~ ~ g2 ~\")",
+        "note(\"c3 c3 ~ g2 ~ eb3 ~ ~\")",
+        "note(\"c3 ~ g2 c3 ~ ~ eb3 ~\")",
+        "note(\"c3 ~ eb3 ~ g2 ~ c3 ~\")",
+        "note(\"c3 g2 ~ c3 ~ g2 ~ eb3\")",
+        "note(\"c3 ~ ~ g2 c3 ~ g2 ~\")"
       ] } }
   ]
 }

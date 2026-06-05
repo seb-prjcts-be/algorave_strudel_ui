@@ -1,8 +1,8 @@
 /**
  * DOM: regels renderen, events, debug-paneel.
  */
-import { createLine, compose, activeVariantAt, ARC_PHASES, PHASE_LABELS, DEFAULT_ARC, DEFAULT_MASTER, clampPhase } from './composer.js?v=6';
-import { getInstrument, instrumentOptionsHtml } from './catalog/instruments.js?v=6';
+import { createLine, compose, applyPreset, activeVariantAt, ARC_PHASES, PHASE_LABELS, DEFAULT_ARC, DEFAULT_MASTER, clampPhase } from './composer.js?v=14';
+import { getInstrument, instrumentOptionsHtml } from './catalog/instruments.js?v=14';
 import {
     getEffect,
     effectOptionsHtml,
@@ -11,22 +11,15 @@ import {
     valueToNorm,
     roundEffectValue,
     formatEffectDisplay
-} from './catalog/effects.js?v=6';
-import { VARIANT_COUNT } from './catalog/variations.js?v=6';
-import { isWavesAvailable, waveNames } from './modulation.js?v=6';
+} from './catalog/effects.js?v=14';
+import { VARIANT_COUNT } from './catalog/variations.js?v=14';
+import { isWavesAvailable, waveNames } from './modulation.js?v=14';
 
 const FALLBACK_WAVES = ['classic sine', 'triangle', 'square', 'mountain peaks', 'steps', 'saw up', 'noise'];
 
 export function createDefaultState() {
-    return {
-        cpm: 55,
-        master: DEFAULT_MASTER,
-        arc: { ...DEFAULT_ARC },
-        lines: [
-            createLine({ instrumentId: 'pink', volume: 0.2 }),
-            createLine({ instrumentId: 'wind', volume: 0.28, effects: [{ effectId: 'room', value: 0.5 }, { effectId: 'lpf', value: 1000 }] })
-        ]
-    };
+    // Startpunt = de vaste preset "Gentle Jazz".
+    return applyPreset('gentle_jazz');
 }
 
 export class Dashboard {
@@ -46,13 +39,54 @@ export class Dashboard {
         this.arcToggle = root.querySelector('#arc-enabled') || document.getElementById('arc-enabled');
         this.arcMinutes = root.querySelector('#arc-minutes') || document.getElementById('arc-minutes');
         this.arcMinutesValue = root.querySelector('#arc-minutes-value') || document.getElementById('arc-minutes-value');
+        this.phaseBtnsEl = root.querySelector('#phase-btns') || document.getElementById('phase-btns');
         this.state = createDefaultState();
         /** @type {Set<string>} open collapse panel ids per zin */
-        this.openLineIds = new Set(this.state.lines.map((l) => l.id));
+        this.openLineIds = new Set(this.state.lines.filter((l) => l.enabled).map((l) => l.id));
         this.bindGlobal();
+        this.renderPhaseButtons();
         this.syncArcControls();
+        this.syncPhaseButtons();
+        this.syncTransport();
         this.renderLines();
         this.updateDebug();
+    }
+
+    syncTransport() {
+        if (this.cpmSlider) {
+            this.cpmSlider.value = String(this.state.cpm);
+            if (this.cpmValue) this.cpmValue.textContent = String(this.state.cpm);
+        }
+        if (this.masterSlider) {
+            this.masterSlider.value = String(this.state.master);
+            if (this.masterValue) this.masterValue.textContent = String(this.state.master);
+        }
+    }
+
+    renderPhaseButtons() {
+        if (!this.phaseBtnsEl) return;
+        this.phaseBtnsEl.innerHTML = Array.from({ length: ARC_PHASES }, (_, i) =>
+            `<button type="button" class="ls-btn ls-btn--phase" data-phase="${i}" title="Jump to ${PHASE_LABELS[i]}">${PHASE_LABELS[i]}</button>`
+        ).join('');
+        this.phaseBtnsEl.querySelectorAll('[data-phase]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const i = Number(btn.dataset.phase);
+                // Toggle: nogmaals op de actieve fase = terug naar automatische opbouw.
+                this.state.previewPhase = this.state.previewPhase === i ? null : i;
+                this.syncPhaseButtons();
+                this.callbacks.onChange();
+                this.updateDebug();
+                this.callbacks.ensurePlaying?.();
+            });
+        });
+    }
+
+    syncPhaseButtons() {
+        if (!this.phaseBtnsEl) return;
+        const p = this.state.previewPhase ?? null;
+        this.phaseBtnsEl.querySelectorAll('[data-phase]').forEach((btn) => {
+            btn.classList.toggle('is-active', Number(btn.dataset.phase) === p);
+        });
     }
 
     lineSummary(line, index) {
@@ -85,21 +119,27 @@ export class Dashboard {
         if (!this.state.arc) this.state.arc = { ...DEFAULT_ARC };
         if (this.state.master == null) this.state.master = prevMaster ?? DEFAULT_MASTER;
         // Bij herladen opnieuw standaard alles openzetten (anders vallen collapse heads mismatch).
-        this.openLineIds = new Set(this.state.lines.map((l) => l.id));
+        this.openLineIds = new Set(this.state.lines.filter((l) => l.enabled).map((l) => l.id));
         this.renderLines();
         this.updateDebug();
         this.syncArcControls();
-        if (this.cpmSlider) {
-            this.cpmSlider.value = String(this.state.cpm);
-            if (this.cpmValue) this.cpmValue.textContent = String(this.state.cpm);
-        }
-        if (this.masterSlider) {
-            this.masterSlider.value = String(this.state.master);
-            if (this.masterValue) this.masterValue.textContent = String(this.state.master);
-        }
+        this.syncPhaseButtons();
+        this.syncTransport();
     }
 
     bindGlobal() {
+        // Vaste presets: laden én starten.
+        this.root.querySelectorAll('[data-preset]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const state = applyPreset(btn.getAttribute('data-preset'));
+                if (state) {
+                    this.setState(state);
+                    this.callbacks.onChange();
+                    this.callbacks.ensurePlaying?.();
+                }
+            });
+        });
+
         if (this.cpmSlider) {
             this.cpmSlider.addEventListener('input', () => {
                 this.state.cpm = Number(this.cpmSlider.value);
@@ -400,6 +440,13 @@ export class Dashboard {
             line.enabled = e.target.checked;
             el.classList.toggle('is-enabled', line.enabled);
             this.updateLineSummary(el, line, lineIndex);
+            // Niet-gebruikte (uitgeschakelde) regels inklappen; ingeschakelde uitklappen.
+            const collapseEl = el.querySelector('[data-line-collapse]');
+            const Collapse = globalThis.bootstrap && globalThis.bootstrap.Collapse;
+            if (collapseEl && Collapse) {
+                const inst = Collapse.getOrCreateInstance(collapseEl, { toggle: false });
+                if (line.enabled) inst.show(); else inst.hide();
+            }
             notify();
         });
 

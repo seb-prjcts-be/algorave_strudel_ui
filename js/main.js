@@ -1,23 +1,23 @@
 /**
  * Left Strudel — orchestratie, transport, debounced evaluate.
  */
-import { Dashboard } from './dashboard.js?v=6';
-import { compose, countActiveLines } from './composer.js?v=6';
-import { getStrudelRuntime, evaluateCode, stopAll, isSamplesReady } from './strudel-runtime.js?v=6';
+import { Dashboard } from './dashboard.js?v=14';
+import { compose, countActiveLines } from './composer.js?v=14';
+import { getStrudelRuntime, evaluateCode, stopAll, isSamplesReady } from './strudel-runtime.js?v=14';
 import {
     playLineBurst,
     playLineStandalone,
     playEffectBurst,
     playEffectStandalone,
     cancelBurstTimer
-} from './oneshot.js?v=6';
+} from './oneshot.js?v=14';
 import {
     loadStateByName,
     saveStateByName,
     getPresetNameFromUrl,
     getActivePresetName
-} from './storage.js?v=6';
-import { loadInstruments } from './catalog/instruments.js?v=6';
+} from './storage.js?v=14';
+import { loadInstruments } from './catalog/instruments.js?v=14';
 
 const DEBOUNCE_MS = 300;
 

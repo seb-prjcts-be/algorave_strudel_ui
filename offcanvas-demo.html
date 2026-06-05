@@ -64,18 +64,21 @@
                         <span class="ls-unit">min</span>
                     </label>
                     <p class="ls-arc-hint">Air → Drone → Motion → Bass → Beat → Melody. Each line enters "from" a phase and stays — spread across the full build-up.</p>
+                    <div class="ls-phases" aria-label="Jump to build-up phase">
+                        <span class="ls-label">Jump</span>
+                        <div class="ls-phase-btns" id="phase-btns"></div>
+                    </div>
                 </div>
 
                 <div class="ls-lines" id="lines-container"></div>
 
-                <div class="ls-savebar" aria-label="Storage">
-                    <div class="ls-save-row">
-                        <label class="ls-field ls-field--inline">
-                            <span class="ls-label">Preset</span>
-                            <input type="text" id="preset-name" placeholder="last or name" />
-                        </label>
-                        <button type="button" class="ls-btn ls-btn--ghost" id="btn-save">Save</button>
-                        <button type="button" class="ls-btn ls-btn--ghost" id="btn-load">Load</button>
+                <div class="ls-scenes" aria-label="Presets">
+                    <span class="ls-label">Preset</span>
+                    <div class="ls-scene-btns">
+                        <button type="button" class="ls-btn ls-btn--scene ls-btn--primary" data-preset="gentle_jazz">Gentle Jazz</button>
+                        <button type="button" class="ls-btn ls-btn--scene" data-preset="vibes_marimba">Vibes &amp; Marimba</button>
+                        <button type="button" class="ls-btn ls-btn--scene" data-preset="upright_trio">Upright Trio</button>
+                        <button type="button" class="ls-btn ls-btn--scene" data-preset="haze">Haze</button>
                     </div>
                 </div>
 
@@ -102,7 +105,7 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script type="module" src="js/main.js?v=6"></script>
+    <script type="module" src="js/main.js?v=14"></script>
 </body>
 
 </html>

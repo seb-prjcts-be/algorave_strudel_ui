@@ -11,7 +11,7 @@ Linker-half dashboard dat Strudel op de achtergrond aanstuurt. Gebruikers bouwen
 - **Code**: `composer.js` vertaalt UI-state → `setcpm` + `stack(...).gain(master)`; uitgeschakelde regels als `//` commentaar.
 - **Master**: globale volume-regelaar (naast tempo) als plafond op stack én one-shots — bescherming tegen plotse uitschieters.
 - **Varianten**: 8 knoppen (0–7) per zin via `variations.js` — `.n(i)` voor samples, param-shift voor synth/noten, patroon-banken voor `beat`/`bass`/`lead`.
-- **Auto-opbouw**: 6 fases (Air→Drone→Motion→Bass→Beat→Melody); elke regel heeft `enterAt` (0–5); `compose()` maskeert per regel zodat lagen instromen en blijven (`mask`). Duur in **minuten** (`arc.minutes`, 1–20), cycli afgeleid van tempo. UI Engelstalig. (Preset-scènes én Jump-knoppen verwijderd — gebruiker bouwt zelf op met + Line.)
+- **Auto-opbouw**: 6 fases (Air→Drone→Motion→Bass→Beat→Melody); elke regel heeft `enterAt` (0–5); `compose()` maskeert per regel zodat lagen instromen en blijven (`mask`). Duur in **minuten** (`arc.minutes`, 1–20), cycli afgeleid van tempo. UI Engelstalig. Jump-knoppen = live controle (spring naar fase). Preset-scènes verwijderd — gebruiker bouwt zelf op met + Line.
 - **One-shot**: `oneshot.js` — korte burst met `.mask("<1 0 0 0>")` bovenop lopende stack.
 
 ## Fasering

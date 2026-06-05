@@ -8,7 +8,7 @@ let INSTRUMENTS = [];
 let loadPromise = null;
 
 /** Laad de catalogus één keer. Resolved met de instrument-array. */
-export function loadInstruments(url = 'data/instruments.json?v=6') {
+export function loadInstruments(url = 'data/instruments.json?v=14') {
     if (loadPromise) return loadPromise;
     loadPromise = fetch(url)
         .then((res) => {
