@@ -6,3 +6,6 @@ desktop.ini
 
 # Dependencies (none currently; everything is CDN-based)
 node_modules/
+
+# Local, machine-specific Claude Code settings (launch configs, local settings)
+.claude/
