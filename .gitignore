@@ -1,0 +1,8 @@
+# OS / editor junk
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+
+# Dependencies (none currently; everything is CDN-based)
+node_modules/
