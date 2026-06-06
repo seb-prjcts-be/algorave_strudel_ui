@@ -1,8 +1,8 @@
 /**
  * Left Strudel — orchestratie, transport, debounced evaluate.
  */
-import { Dashboard } from './dashboard.js?v=15';
-import { compose, countActiveLines } from './composer.js?v=14';
+import { Dashboard } from './dashboard.js?v=17';
+import { compose, countActiveLines } from './composer.js?v=16';
 import { getStrudelRuntime, evaluateCode, stopAll, isSamplesReady } from './strudel-runtime.js?v=14';
 import {
     playLineBurst,
@@ -10,7 +10,7 @@ import {
     playEffectBurst,
     playEffectStandalone,
     cancelBurstTimer
-} from './oneshot.js?v=14';
+} from './oneshot.js?v=16';
 import {
     loadStateByName,
     saveStateByName,
@@ -18,7 +18,7 @@ import {
     getActivePresetName
 } from './storage.js?v=14';
 import { loadInstruments } from './catalog/instruments.js?v=14';
-import { PANEL_HTML } from './panel.js?v=15';
+import { PANEL_HTML } from './panel.js?v=16';
 
 const DEBOUNCE_MS = 300;
 

@@ -32,6 +32,22 @@ export const ARC_MAX_MINUTES = 20;
 export const PHASE_WEIGHTS = [3, 3, 2, 1, 1, 1];
 
 /**
+ * Fade-out: na de piek keren we terug langs de openingsfasen (in omgekeerde
+ * volgorde), zodat het stuk eindigt op dezelfde ijle drone-bedding als waar het
+ * begon — een gespiegelde uitgang. Elke waarde is de fase-INDEX waarvan de
+ * aan/uit-staat wordt gekopieerd: eerst terug naar "Drone" (1), dan "Air" (0).
+ * Gevolg: dichte lagen (enterAt ≥ 2) vallen meteen na de piek weg; alleen de
+ * drones doven uit. (enterAt 0 = altijd hoorbaar, dus die blijft de bedding.)
+ */
+export const FADE_PHASES = [1, 0];
+/** Gewichten van de fade-fasen = gekopieerd van de gespiegelde openingsfasen. */
+const FADE_WEIGHTS = FADE_PHASES.map((i) => PHASE_WEIGHTS[i]);
+/** Volledige tijdlijn-labels (opbouw + fade) voor hosts die de fase tonen. */
+export const TIMELINE_LABELS = [...PHASE_LABELS, ...FADE_PHASES.map((i) => `${PHASE_LABELS[i]} ↓`)];
+/** Aantal segmenten op de volledige tijdlijn (opbouw + fade). */
+export const TIMELINE_PHASES = ARC_PHASES + FADE_PHASES.length;
+
+/**
  * @typedef {Object} EffectSlot
  * @property {string} effectId
  * @property {number} value
@@ -131,6 +147,22 @@ export function clampPhase(p) {
     return Math.max(0, Math.min(ARC_PHASES - 1, Math.round(Number(p) || 0)));
 }
 
+/** Clamp naar de VOLLEDIGE tijdlijn (opbouw + fade): 0..TIMELINE_PHASES-1. */
+export function clampTimeline(p) {
+    return Math.max(0, Math.min(TIMELINE_PHASES - 1, Math.round(Number(p) || 0)));
+}
+
+/**
+ * Bij een preview-sprong naar tijdlijn-fase `tp`: welke `enterAt`-drempel hoort
+ * daarbij? Opbouwfasen (0..5) → de fase zelf. Fade-fasen (6,7) → de gespiegelde
+ * openingsfase (Drone=1, Air=0), want de fade hergebruikt die laag-set. Zo
+ * klinkt "jump → Air ↓" exact als de ijle uitgang.
+ */
+export function previewThreshold(tp) {
+    const p = clampTimeline(tp);
+    return p < ARC_PHASES ? p : FADE_PHASES[p - ARC_PHASES];
+}
+
 function normalizeArc(arc) {
     const a = arc || {};
     const minutes = Math.max(
@@ -146,8 +178,9 @@ function normalizeArc(arc) {
  */
 export function arcPhaseCycleArray(cpm, minutes) {
     const total = (Number(cpm) || 55) * (Number(minutes) || DEFAULT_ARC.minutes);
-    const sumW = PHASE_WEIGHTS.reduce((a, b) => a + b, 0);
-    return PHASE_WEIGHTS.map((w) => Math.max(1, Math.round((total * w) / sumW)));
+    const weights = [...PHASE_WEIGHTS, ...FADE_WEIGHTS]; // build-up + mirrored fade-out
+    const sumW = weights.reduce((a, b) => a + b, 0);
+    return weights.map((w) => Math.max(1, Math.round((total * w) / sumW)));
 }
 
 /**
@@ -158,13 +191,15 @@ export function arcPhaseCycleArray(cpm, minutes) {
  */
 export function arcMaskFragment(enterAt, cycleArr) {
     const p = clampPhase(enterAt);
-    if (p <= 0) return '';
-    const tokens = [];
-    for (let phase = 0; phase < ARC_PHASES; phase++) {
-        const on = phase >= p ? '1' : '0';
-        const c = cycleArr[phase] || 1;
-        tokens.push(c > 1 ? `${on}!${c}` : on);
-    }
+    if (p <= 0) return ''; // enterAt 0 = altijd hoorbaar (de blijvende drone-bedding)
+    // ON-staat per segment: opbouw (phase ≥ enterAt) + fade (spiegel van fase 1, 0).
+    const on = [];
+    for (let phase = 0; phase < ARC_PHASES; phase++) on.push(phase >= p ? 1 : 0);
+    for (const mirror of FADE_PHASES) on.push(mirror >= p ? 1 : 0);
+    const tokens = on.map((v, i) => {
+        const c = cycleArr[i] || 1;
+        return c > 1 ? `${v}!${c}` : `${v}`;
+    });
     return `.mask("<${tokens.join(' ')}>")`;
 }
 
@@ -233,6 +268,7 @@ export function buildStackBody(lines, arc, cpm, previewPhase = null) {
     }
     const a = normalizeArc(arc);
     const preview = previewPhase != null;
+    const previewThr = preview ? previewThreshold(previewPhase) : null;
     const cycleArr = preview ? null : arcPhaseCycleArray(cpm, a.minutes);
 
     return lines
@@ -240,9 +276,10 @@ export function buildStackBody(lines, arc, cpm, previewPhase = null) {
             const chain = buildLineChain(line);
             const enterAt = clampPhase(line.enterAt ?? 0);
 
-            // Sprong naar fase: statische mix t/m die fase, geen tijd-mask.
+            // Sprong naar (tijdlijn-)fase: statische mix t/m de bijhorende drempel,
+            // geen tijd-mask. Fade-fasen vallen terug op hun gespiegelde laag-set.
             if (preview) {
-                const audible = line.enabled && enterAt <= previewPhase;
+                const audible = line.enabled && enterAt <= previewThr;
                 return audible ? `  ${chain}` : `  // ${chain}`;
             }
 
@@ -264,11 +301,12 @@ export function masterGainFragment(state) {
 
 export function compose(state) {
     const cpm = Number(state.cpm) || 55;
-    const previewPhase = state.previewPhase != null ? clampPhase(state.previewPhase) : null;
+    const previewPhase = state.previewPhase != null ? clampTimeline(state.previewPhase) : null;
+    const previewThr = previewPhase != null ? previewThreshold(previewPhase) : null;
 
     const active = state.lines.filter((l) => {
         if (!l.enabled) return false;
-        if (previewPhase != null) return clampPhase(l.enterAt ?? 0) <= previewPhase;
+        if (previewPhase != null) return clampPhase(l.enterAt ?? 0) <= previewThr;
         return true;
     });
     if (!active.length) {

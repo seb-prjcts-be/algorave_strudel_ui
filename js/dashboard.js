@@ -1,7 +1,7 @@
 /**
  * DOM: regels renderen, events, debug-paneel.
  */
-import { createLine, compose, applyPreset, activeVariantAt, ARC_PHASES, PHASE_LABELS, DEFAULT_ARC, DEFAULT_MASTER, clampPhase } from './composer.js?v=14';
+import { createLine, compose, applyPreset, activeVariantAt, ARC_PHASES, PHASE_LABELS, TIMELINE_LABELS, TIMELINE_PHASES, DEFAULT_ARC, DEFAULT_MASTER, clampPhase } from './composer.js?v=16';
 import { getInstrument, instrumentOptionsHtml } from './catalog/instruments.js?v=14';
 import {
     getEffect,
@@ -65,8 +65,10 @@ export class Dashboard {
 
     renderPhaseButtons() {
         if (!this.phaseBtnsEl) return;
-        this.phaseBtnsEl.innerHTML = Array.from({ length: ARC_PHASES }, (_, i) =>
-            `<button type="button" class="ls-btn ls-btn--phase" data-phase="${i}" title="Jump to ${PHASE_LABELS[i]}">${PHASE_LABELS[i]}</button>`
+        // Full timeline: 6 build-up phases + 2 mirrored fade-out phases (Drone ↓,
+        // Air ↓). A fade button previews the thinned ending (its mirrored layer set).
+        this.phaseBtnsEl.innerHTML = Array.from({ length: TIMELINE_PHASES }, (_, i) =>
+            `<button type="button" class="ls-btn ls-btn--phase${i >= ARC_PHASES ? ' ls-btn--fade' : ''}" data-phase="${i}" title="Go to ${TIMELINE_LABELS[i]}">${TIMELINE_LABELS[i]}</button>`
         ).join('');
         this.phaseBtnsEl.querySelectorAll('[data-phase]').forEach((btn) => {
             btn.addEventListener('click', () => {
