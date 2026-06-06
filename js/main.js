@@ -1,7 +1,7 @@
 /**
  * Left Strudel — orchestratie, transport, debounced evaluate.
  */
-import { Dashboard } from './dashboard.js?v=14';
+import { Dashboard } from './dashboard.js?v=15';
 import { compose, countActiveLines } from './composer.js?v=14';
 import { getStrudelRuntime, evaluateCode, stopAll, isSamplesReady } from './strudel-runtime.js?v=14';
 import {
@@ -121,6 +121,10 @@ function schedulePersist(dashboard) {
 }
 
 let highlightRaf = null;
+// Baseline cycle captured at the start of each playback, so the host can derive
+// per-take progress even if getTime() is continuous across plays. See the
+// `window.algoraveTransport` publish in the highlight tick below.
+let transportStartCycle = null;
 
 // Live UI-weerslag: licht de nu-klinkende variant op bij cycling-regels.
 // getTime() (global, na runtime-init) geeft de cyclus-positie — dezelfde klok
@@ -132,6 +136,20 @@ function startHighlightLoop(dashboard) {
         let cycle = 0;
         try { if (typeof globalThis.getTime === 'function') cycle = globalThis.getTime(); } catch (e) { /* nog geen klok */ }
         dashboard.highlightCyclingVariants(cycle);
+
+        // Publish transport state for any host (e.g. the algorave visuals) to read.
+        // Raw figures only — the host derives arc phase/progress from cpm + arc.
+        if (transportStartCycle == null && cycle > 0) transportStartCycle = cycle;
+        const st = dashboard.getState();
+        window.algoraveTransport = {
+            playing: true,
+            cycle,
+            startCycle: transportStartCycle ?? cycle,
+            cpm: st.cpm,
+            arcEnabled: st.arc?.enabled !== false,
+            arcMinutes: st.arc?.minutes,
+        };
+
         highlightRaf = requestAnimationFrame(tick);
     };
     highlightRaf = requestAnimationFrame(tick);
@@ -153,6 +171,7 @@ async function startPlayback(dashboard) {
         await getStrudelRuntime();
         const samples = isSamplesReady() ? '' : ' (synth-only)';
         playing = true;
+        transportStartCycle = null; // recapture the baseline for this take
         btnStop.disabled = false;
         btnPlay.classList.add('is-active');
         btnPlay.textContent = '▶ Playing';
@@ -182,6 +201,8 @@ function initTransport(dashboard) {
             console.warn(e);
         }
         playing = false;
+        transportStartCycle = null;
+        if (window.algoraveTransport) window.algoraveTransport.playing = false;
         stopHighlightLoop(dashboard);
         btnPlay.classList.remove('is-active');
         btnPlay.textContent = '▶ Start';

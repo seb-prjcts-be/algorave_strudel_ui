@@ -77,6 +77,13 @@ export class Dashboard {
                 this.callbacks.onChange();
                 this.updateDebug();
                 this.callbacks.ensurePlaying?.();
+                // Close the enclosing offcanvas (if any) so the within-one-bar jump
+                // plays out on the visuals instead of being hidden behind the panel.
+                // Host-agnostic: a no-op on standalone pages with no offcanvas.
+                const oc = btn.closest('.offcanvas');
+                if (oc && window.bootstrap?.Offcanvas) {
+                    window.bootstrap.Offcanvas.getOrCreateInstance(oc).hide();
+                }
             });
         });
     }
