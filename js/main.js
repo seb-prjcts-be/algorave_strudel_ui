@@ -1,7 +1,7 @@
 /**
  * Left Strudel — orchestratie, transport, debounced evaluate.
  */
-import { Dashboard } from './dashboard.js?v=20';
+import { Dashboard } from './dashboard.js?v=21';
 import { compose, countActiveLines, arcPhaseCycleArray, arcPhaseAtCycle, resolvePhases } from './composer.js?v=19';
 import { getStrudelRuntime, evaluateCode, stopAll, isSamplesReady } from './strudel-runtime.js?v=14';
 import {
@@ -18,7 +18,7 @@ import {
     getActivePresetName
 } from './storage.js?v=16';
 import { loadInstruments } from './catalog/instruments.js?v=14';
-import { PANEL_HTML } from './panel.js?v=17';
+import { PANEL_HTML } from './panel.js?v=18';
 
 const DEBOUNCE_MS = 300;
 
@@ -125,6 +125,7 @@ function scheduleRefresh(dashboard, opts) {
     const immediate = opts && opts.immediate;
     debounceTimer = setTimeout(() => {
         if (!playing) return;
+        if (dashboard.codeManual) return; // handmatige code draait; UI-edits niet erover heen evalueren
         if (immediate) {
             refreshPlayback(dashboard);
             return;
@@ -295,6 +296,27 @@ async function boot() {
     },
     ensurePlaying: async () => {
         if (!playing) await startPlayback(dashboard);
+    },
+    onRunCode: async (code) => {
+        if (!code || !code.trim()) return;
+        if (!(await ensureRuntime())) return;
+        try {
+            if (!playing) {
+                playing = true;
+                dashboard.setPlaying?.(true);
+                transportStartCycle = null;
+                btnStop.disabled = false;
+                btnPlay.classList.add('is-active');
+                btnPlay.textContent = '▶ Playing';
+                startHighlightLoop(dashboard);
+            }
+            cancelBurstTimer();
+            await evaluateCode(code);
+            setStatus('Running edited code', 'is-playing');
+        } catch (e) {
+            console.error(e);
+            setStatus('Code error — check the editor', 'is-error');
+        }
     },
     onOneShotLine: async (line) => {
         if (!(await ensureRuntime())) return;

@@ -782,7 +782,33 @@ body {
     color: var(--ls-bg);
 }
 
+.ls-debug-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.4rem;
+    border-bottom: 1px solid var(--ls-border);
+}
+
+.ls-debug-bar .ls-btn {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.65rem;
+}
+
+.ls-debug-state {
+    font-size: 0.62rem;
+    font-family: var(--ls-mono);
+    color: var(--ls-fg-muted);
+}
+
+.ls-debug-state[hidden] {
+    display: none;
+}
+
 .ls-debug-code {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
     margin: 0;
     padding: 0.5rem 0.6rem;
     font-family: var(--ls-mono);
@@ -790,10 +816,19 @@ body {
     font-weight: 300;
     line-height: 1.4;
     color: var(--ls-fg);
+    background: transparent;
+    border: 0;
+    outline: 0;
+    resize: vertical;
     overflow: auto;
+    min-height: 9rem;
     max-height: 22vh;
     white-space: pre-wrap;
     word-break: break-word;
+}
+
+.ls-debug-code:focus {
+    outline: 0;
 }
 
 .ls-stage {

@@ -32,6 +32,7 @@ export class Dashboard {
         this.callbacks = callbacks;
         this.linesEl = root.querySelector('#lines-container') || document.getElementById('lines-container');
         this.debugEl = root.querySelector('#debug-code') || document.getElementById('debug-code');
+        this.debugStateEl = root.querySelector('#debug-state') || document.getElementById('debug-state');
         this.cpmSlider = root.querySelector('#cpm-slider') || document.getElementById('cpm-slider');
         this.cpmValue = root.querySelector('#cpm-value') || document.getElementById('cpm-value');
         this.masterSlider = root.querySelector('#master-slider') || document.getElementById('master-slider');
@@ -48,6 +49,9 @@ export class Dashboard {
         this.playing = false;
         /** Snapshot van de standaard-progressie; gezet bij elke volledige state-wissel. */
         this.baseline = null;
+        /** Code-view: codeDirty = eigen edits in de textarea; codeManual = die code draait nu (auto-refresh gepauzeerd). */
+        this.codeDirty = false;
+        this.codeManual = false;
         this.bindGlobal();
         this.buildOffPathUI();
         this.baseline = progressionSnapshot(this.state);
@@ -387,13 +391,54 @@ export class Dashboard {
             });
         }
 
+        // Bewerkbare code-view: typen beschermt je tekst; Run jaagt de tekst door
+        // onze eigen runtime; Reset keert terug naar de gegenereerde code.
+        if (this.debugEl) {
+            this.debugEl.addEventListener('input', () => {
+                this.codeDirty = true;
+                this.syncCodeState();
+            });
+        }
+        const runBtn = this.root.querySelector('#btn-run-code') || document.getElementById('btn-run-code');
+        if (runBtn) {
+            runBtn.addEventListener('click', () => {
+                this.codeManual = true; // deze code stuurt nu; auto-refresh pauzeert
+                this.syncCodeState();
+                this.callbacks.onRunCode?.(this.debugEl ? this.debugEl.value : '');
+            });
+        }
+        const resetBtn = this.root.querySelector('#btn-reset-code') || document.getElementById('btn-reset-code');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                this.codeDirty = false;
+                this.codeManual = false;
+                this.updateDebug();        // her-vul met de gegenereerde code
+                this.syncCodeState();
+                this.callbacks.onChange(); // speel de gegenereerde code weer (indien aan het spelen)
+            });
+        }
     }
 
     updateDebug() {
-        if (this.debugEl) {
-            this.debugEl.textContent = compose(this.state);
+        // In de bewerkbare code-view: niet overschrijven zolang de gebruiker
+        // eigen edits heeft (codeDirty), anders spiegelt het de gegenereerde code.
+        if (this.debugEl && !this.codeDirty) {
+            this.debugEl.value = compose(this.state);
         }
         this.syncOffPath();
+    }
+
+    /** Toon de code-status (handmatig/bewerkt) + de Reset-knop. */
+    syncCodeState() {
+        const resetBtn = this.root.querySelector('#btn-reset-code') || document.getElementById('btn-reset-code');
+        if (resetBtn) resetBtn.hidden = !(this.codeDirty || this.codeManual);
+        if (this.debugStateEl) {
+            let msg = '';
+            if (this.codeManual) msg = 'Running your code — UI edits paused. Reset to resume.';
+            else if (this.codeDirty) msg = 'Edited — hit Run to play your version.';
+            this.debugStateEl.textContent = msg;
+            this.debugStateEl.hidden = !msg;
+        }
     }
 
     renderLines() {

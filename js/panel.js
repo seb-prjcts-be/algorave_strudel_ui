@@ -66,7 +66,12 @@ export const PANEL_HTML = `
 
     <div class="collapse" id="debug-panel">
         <div class="ls-debug">
-            <pre class="ls-debug-code" id="debug-code"></pre>
+            <div class="ls-debug-bar">
+                <button type="button" class="ls-btn ls-btn--ghost" id="btn-run-code" title="Evaluate this code now">▶ Run</button>
+                <button type="button" class="ls-btn ls-btn--ghost" id="btn-reset-code" hidden title="Discard edits, back to the generated code">Reset</button>
+                <span class="ls-debug-state" id="debug-state" hidden></span>
+            </div>
+            <textarea class="ls-debug-code" id="debug-code" spellcheck="false" aria-label="Strudel code"></textarea>
         </div>
     </div>
 </div>
