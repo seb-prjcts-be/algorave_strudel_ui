@@ -4,7 +4,7 @@
  * - optional named presets via UI / URL param (?preset=naam)
  */
 
-const VERSION = 2;
+const VERSION = 3;
 const LAST_KEY = 'left_strudel:last';
 const PRESET_PREFIX = 'left_strudel:preset:';
 const ACTIVE_KEY = 'left_strudel:activePreset';
@@ -33,10 +33,24 @@ function normalizeLoadedState(raw) {
         minutes: Number.isFinite(arcMinutes) ? Math.max(1, Math.min(20, arcMinutes)) : 12
     };
 
+    // Fase-set (namen + gewichten) per preset; exact 6 of terug naar standaard.
+    const DEFAULT_LABELS = ['Air', 'Drone', 'Motion', 'Bass', 'Beat', 'Melody'];
+    const DEFAULT_WEIGHTS = [3, 3, 2, 1, 1, 1];
+    const phasesRaw = state.phases && typeof state.phases === 'object' ? state.phases : {};
+    const phases = {
+        labels: Array.isArray(phasesRaw.labels) && phasesRaw.labels.length === 6
+            ? phasesRaw.labels.map((s) => String(s))
+            : DEFAULT_LABELS,
+        weights: Array.isArray(phasesRaw.weights) && phasesRaw.weights.length === 6
+            ? phasesRaw.weights.map((w) => Math.max(1, Math.round(Number(w) || 1)))
+            : DEFAULT_WEIGHTS
+    };
+
     return {
         cpm: Number.isFinite(cpm) ? cpm : 55,
         master,
         arc,
+        phases,
         lines: lines.map((l, idx) => {
             const id = typeof l.id === 'string' ? l.id : `line-${Date.now()}-${idx}`;
             const enabled = l.enabled !== false;

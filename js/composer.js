@@ -3,7 +3,7 @@
  */
 import { getInstrument } from './catalog/instruments.js?v=14';
 import { getEffect } from './catalog/effects.js?v=14';
-import { buildInstrumentBase } from './catalog/variations.js?v=14';
+import { buildInstrumentBase } from './catalog/variations.js?v=15';
 import { modValuePattern } from './modulation.js?v=14';
 
 /** Aantal fases in de auto-opbouw — 6 voor een fijnmazige opbouw over minuten. */
@@ -40,12 +40,76 @@ export const PHASE_WEIGHTS = [3, 3, 2, 1, 1, 1];
  * drones doven uit. (enterAt 0 = altijd hoorbaar, dus die blijft de bedding.)
  */
 export const FADE_PHASES = [1, 0];
-/** Gewichten van de fade-fasen = gekopieerd van de gespiegelde openingsfasen. */
-const FADE_WEIGHTS = FADE_PHASES.map((i) => PHASE_WEIGHTS[i]);
 /** Volledige tijdlijn-labels (opbouw + fade) voor hosts die de fase tonen. */
 export const TIMELINE_LABELS = [...PHASE_LABELS, ...FADE_PHASES.map((i) => `${PHASE_LABELS[i]} ↓`)];
 /** Aantal segmenten op de volledige tijdlijn (opbouw + fade). */
 export const TIMELINE_PHASES = ARC_PHASES + FADE_PHASES.length;
+
+/** Standaard fase-set. Presets mogen een eigen set (namen + gewichten) meegeven. */
+export const DEFAULT_PHASES = { labels: [...PHASE_LABELS], weights: [...PHASE_WEIGHTS] };
+
+/**
+ * Los de fase-set van een state op naar exact ARC_PHASES namen + gewichten.
+ * Het AANTAL fases ligt vast (ARC_PHASES) zodat alle timing-, mask- en
+ * preview-logica ongewijzigd blijft; alleen de namen en lengteverhoudingen zijn
+ * per-preset. Ontbrekend of foutgevormd → terug naar de standaard.
+ */
+export function resolvePhases(state) {
+    const p = state && typeof state.phases === 'object' && state.phases ? state.phases : {};
+    const labels = Array.isArray(p.labels) && p.labels.length === ARC_PHASES
+        ? p.labels.map((s) => String(s))
+        : [...PHASE_LABELS];
+    const weights = Array.isArray(p.weights) && p.weights.length === ARC_PHASES
+        ? p.weights.map((w) => Math.max(1, Math.round(Number(w) || 1)))
+        : [...PHASE_WEIGHTS];
+    return { labels, weights };
+}
+
+/** Volledige tijdlijn-labels (opbouw + gespiegelde fade) voor een gegeven labelset. */
+export function timelineLabelsFor(labels) {
+    return [...labels, ...FADE_PHASES.map((i) => `${labels[i]} ↓`)];
+}
+
+/**
+ * Snapshot van enkel de PROGRESSIE-velden — hoe het stuk over tijd evolueert:
+ * de arc, de fase-set, en per regel de instap-fase + variant-cycling. Klank-
+ * keuzes (instrument, volume, effecten, vaste variant) horen er NIET bij; die
+ * blijven van de gebruiker. Basis voor "van het standaardpad af"-detectie.
+ */
+export function progressionSnapshot(state) {
+    const arc = state && state.arc ? state.arc : {};
+    return {
+        arc: { enabled: arc.enabled !== false, minutes: arc.minutes ?? DEFAULT_ARC.minutes },
+        phases: resolvePhases(state),
+        lines: ((state && state.lines) || []).map((l) => ({
+            id: l.id,
+            enterAt: clampPhase(l.enterAt ?? 0),
+            variantCycle: normalizeVariantCycle(l.variantCycle)
+        }))
+    };
+}
+
+/**
+ * Gelijk = nog op het standaardpad. Vergelijkt arc + fase-set, en per regel de
+ * progressie (instap-fase + cycling) gematcht op id. Regels die de gebruiker
+ * toevoegde (geen match in de baseline) tellen NIET als afwijking — dat is een
+ * sound-keuze, geen progressie-edit.
+ */
+export function sameProgression(cur, base) {
+    if (!cur || !base) return false;
+    if (cur.arc.enabled !== base.arc.enabled || cur.arc.minutes !== base.arc.minutes) return false;
+    if (cur.phases.labels.join('|') !== base.phases.labels.join('|')) return false;
+    if (cur.phases.weights.join(',') !== base.phases.weights.join(',')) return false;
+    const baseById = new Map(base.lines.map((l) => [l.id, l]));
+    for (const lc of cur.lines) {
+        const lb = baseById.get(lc.id);
+        if (!lb) continue; // toegevoegde regel telt niet mee
+        if (lc.enterAt !== lb.enterAt) return false;
+        const a = lc.variantCycle, b = lb.variantCycle;
+        if (a.enabled !== b.enabled || a.count !== b.count || a.cycles !== b.cycles) return false;
+    }
+    return true;
+}
 
 /**
  * @typedef {Object} EffectSlot
@@ -176,11 +240,29 @@ function normalizeArc(arc) {
  * Cycli per fase als array, afgeleid van tempo + totaalduur, gewogen via
  * PHASE_WEIGHTS. cpm = cycli/minuut, dus totaal cycli = cpm · minuten.
  */
-export function arcPhaseCycleArray(cpm, minutes) {
+export function arcPhaseCycleArray(cpm, minutes, weights = PHASE_WEIGHTS) {
     const total = (Number(cpm) || 55) * (Number(minutes) || DEFAULT_ARC.minutes);
-    const weights = [...PHASE_WEIGHTS, ...FADE_WEIGHTS]; // build-up + mirrored fade-out
-    const sumW = weights.reduce((a, b) => a + b, 0);
-    return weights.map((w) => Math.max(1, Math.round((total * w) / sumW)));
+    const fadeWeights = FADE_PHASES.map((i) => weights[i]); // fade kopieert de gespiegelde openingsfasen
+    const all = [...weights, ...fadeWeights]; // build-up + mirrored fade-out
+    const sumW = all.reduce((a, b) => a + b, 0);
+    return all.map((w) => Math.max(1, Math.round((total * w) / sumW)));
+}
+
+/**
+ * Welke tijdlijn-fase (0..TIMELINE_PHASES-1) klinkt op cyclus `cycle`? De mask
+ * `<…>` is absoluut uitgelijnd op cyclus 0 en herhaalt elke `sum(cycleArr)`
+ * cycli; deze mapping volgt exact diezelfde segmenten, zodat de UI-indicator in
+ * de maat met de audio loopt.
+ */
+export function arcPhaseAtCycle(cycle, cycleArr) {
+    const total = cycleArr.reduce((a, b) => a + b, 0);
+    if (!(total > 0)) return 0;
+    let pos = ((Math.floor(cycle) % total) + total) % total;
+    for (let i = 0; i < cycleArr.length; i++) {
+        if (pos < cycleArr[i]) return i;
+        pos -= cycleArr[i];
+    }
+    return cycleArr.length - 1;
 }
 
 /**
@@ -262,14 +344,14 @@ export function buildLineChain(line, variantOverride) {
     return chain;
 }
 
-export function buildStackBody(lines, arc, cpm, previewPhase = null) {
+export function buildStackBody(lines, arc, cpm, previewPhase = null, weights = PHASE_WEIGHTS) {
     if (!lines.length) {
         return 'silence';
     }
     const a = normalizeArc(arc);
     const preview = previewPhase != null;
     const previewThr = preview ? previewThreshold(previewPhase) : null;
-    const cycleArr = preview ? null : arcPhaseCycleArray(cpm, a.minutes);
+    const cycleArr = preview ? null : arcPhaseCycleArray(cpm, a.minutes, weights);
 
     return lines
         .map((line) => {
@@ -301,6 +383,7 @@ export function masterGainFragment(state) {
 
 export function compose(state) {
     const cpm = Number(state.cpm) || 55;
+    const { weights } = resolvePhases(state);
     const previewPhase = state.previewPhase != null ? clampTimeline(state.previewPhase) : null;
     const previewThr = previewPhase != null ? previewThreshold(previewPhase) : null;
 
@@ -312,7 +395,7 @@ export function compose(state) {
     if (!active.length) {
         return `setcpm(${cpm})\n\nsilence`;
     }
-    const body = buildStackBody(state.lines, state.arc, cpm, previewPhase);
+    const body = buildStackBody(state.lines, state.arc, cpm, previewPhase, weights);
     return `setcpm(${cpm})\n\nstack(\n${body}\n)${masterGainFragment(state)}`;
 }
 
@@ -336,6 +419,7 @@ export const PRESETS = {
         cpm: 52,
         master: DEFAULT_MASTER,
         arc: { enabled: true, minutes: 12 },
+        phases: { labels: ['Air', 'Rhodes', 'Texture', 'Bass', 'Groove', 'Lead'], weights: [3, 3, 2, 1, 1, 1] },
         lines: [
             { instrumentId: 'warm_drone', volume: 0.28, variantIndex: 0, enterAt: 0, effects: [{ effectId: 'lpf', value: 1400 }, { effectId: 'room', value: 0.6 }] },
             { instrumentId: 'keys', volume: 0.22, variantIndex: 0, enterAt: 1, effects: [{ effectId: 'lpf', value: 1600 }, { effectId: 'room', value: 0.55 }] },
@@ -352,6 +436,7 @@ export const PRESETS = {
         cpm: 54,
         master: DEFAULT_MASTER,
         arc: { enabled: true, minutes: 12 },
+        phases: { labels: ['Air', 'Mallets', 'Pad', 'Vibes', 'Bass', 'Groove'], weights: [3, 2, 2, 1, 1, 1] },
         lines: [
             { instrumentId: 'warm_drone', volume: 0.24, variantIndex: 0, enterAt: 0, effects: [{ effectId: 'lpf', value: 1300 }, { effectId: 'room', value: 0.6 }] },
             { instrumentId: 'mallet', volume: 0.3, variantIndex: 0, enterAt: 1, variantCycle: { enabled: true, count: 3, cycles: 4 }, effects: [{ effectId: 'delay', value: 0.2 }, { effectId: 'room', value: 0.45 }] },
@@ -367,6 +452,7 @@ export const PRESETS = {
         cpm: 58,
         master: DEFAULT_MASTER,
         arc: { enabled: true, minutes: 10 },
+        phases: { labels: ['Air', 'Keys', 'Bass', 'Brushes', 'Lead', 'Vibes'], weights: [3, 2, 1, 1, 1, 1] },
         lines: [
             { instrumentId: 'warm_drone', volume: 0.2, variantIndex: 0, enterAt: 0, effects: [{ effectId: 'lpf', value: 1300 }, { effectId: 'room', value: 0.55 }] },
             { instrumentId: 'keys', volume: 0.22, variantIndex: 0, enterAt: 1, effects: [{ effectId: 'lpf', value: 1600 }, { effectId: 'room', value: 0.5 }] },
@@ -382,7 +468,8 @@ export const PRESETS = {
         cpm: 46,
         master: DEFAULT_MASTER,
         arc: { enabled: true, minutes: 14 },
-        // Ambient, beatloos — pads, drone, sub, abstracte sparkles.
+        // Ambient, beatloos — pads, drone, sub, abstracte sparkles. Géén 'Beat'-fase.
+        phases: { labels: ['Veil', 'Pad', 'Deep', 'Bells', 'Glints', 'Shimmer'], weights: [4, 3, 2, 1, 1, 1] },
         lines: [
             { instrumentId: 'warm_drone', volume: 0.26, variantIndex: 0, enterAt: 0, effects: [{ effectId: 'lpf', value: 1200 }, { effectId: 'room', value: 0.65 }] },
             { instrumentId: 'warmpad', volume: 0.2, variantIndex: 0, enterAt: 1, effects: [{ effectId: 'lpf', value: 900 }, { effectId: 'room', value: 0.6 }] },
@@ -402,6 +489,9 @@ export function applyPreset(id) {
         cpm: p.cpm,
         master: p.master ?? DEFAULT_MASTER,
         arc: { ...(p.arc || DEFAULT_ARC) },
+        phases: p.phases
+            ? { labels: [...p.phases.labels], weights: [...p.phases.weights] }
+            : { labels: [...PHASE_LABELS], weights: [...PHASE_WEIGHTS] },
         lines: p.lines.map((l) => createLine(l))
     };
 }

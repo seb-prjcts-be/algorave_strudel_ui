@@ -1,7 +1,7 @@
 /**
  * Eenmalige bursts bovenop de lopende stack (geen hush tussen bursts).
  */
-import { compose, buildLineChain, masterGainFragment } from './composer.js?v=16';
+import { compose, buildLineChain, masterGainFragment } from './composer.js?v=17';
 import { evaluateCode, stopAll } from './strudel-runtime.js?v=14';
 import { getEffect } from './catalog/effects.js?v=14';
 import { getInstrument } from './catalog/instruments.js?v=14';

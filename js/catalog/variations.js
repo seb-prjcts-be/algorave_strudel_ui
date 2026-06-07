@@ -6,6 +6,20 @@
 
 export const VARIANT_COUNT = 8;
 
+/**
+ * Aantal écht distincte varianten van een instrument. `patterns`/`notes` met een
+ * items-lijst → het aantal items (max 8); `param`/`transpose`/`sampleIndex` en de
+ * standaard → 8 berekende varianten. Hiermee tonen we alleen geldige opties:
+ * variant-knoppen én cycle-aantallen die echt iets veranderen.
+ */
+export function variantCount(instrument) {
+    const v = instrument && instrument.variant;
+    if (v && (v.type === 'patterns' || v.type === 'notes') && Array.isArray(v.items)) {
+        return Math.max(1, Math.min(VARIANT_COUNT, v.items.length));
+    }
+    return VARIANT_COUNT;
+}
+
 function clampIndex(variantIndex) {
     return Math.max(0, Math.min(VARIANT_COUNT - 1, Number(variantIndex) || 0));
 }

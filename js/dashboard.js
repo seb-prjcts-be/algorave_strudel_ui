@@ -1,7 +1,7 @@
 /**
  * DOM: regels renderen, events, debug-paneel.
  */
-import { createLine, compose, applyPreset, activeVariantAt, ARC_PHASES, PHASE_LABELS, TIMELINE_LABELS, TIMELINE_PHASES, DEFAULT_ARC, DEFAULT_MASTER, clampPhase } from './composer.js?v=16';
+import { createLine, compose, applyPreset, activeVariantAt, ARC_PHASES, TIMELINE_PHASES, DEFAULT_ARC, DEFAULT_MASTER, clampPhase, previewThreshold, resolvePhases, timelineLabelsFor, progressionSnapshot, sameProgression } from './composer.js?v=17';
 import { getInstrument, instrumentOptionsHtml } from './catalog/instruments.js?v=14';
 import {
     getEffect,
@@ -12,7 +12,7 @@ import {
     roundEffectValue,
     formatEffectDisplay
 } from './catalog/effects.js?v=14';
-import { VARIANT_COUNT } from './catalog/variations.js?v=14';
+import { variantCount } from './catalog/variations.js?v=15';
 import { isWavesAvailable, waveNames } from './modulation.js?v=14';
 
 const FALLBACK_WAVES = ['classic sine', 'triangle', 'square', 'mountain peaks', 'steps', 'saw up', 'noise'];
@@ -40,16 +40,39 @@ export class Dashboard {
         this.arcMinutes = root.querySelector('#arc-minutes') || document.getElementById('arc-minutes');
         this.arcMinutesValue = root.querySelector('#arc-minutes-value') || document.getElementById('arc-minutes-value');
         this.phaseBtnsEl = root.querySelector('#phase-btns') || document.getElementById('phase-btns');
+        this.arcHintEl = root.querySelector('#arc-hint') || document.getElementById('arc-hint');
         this.state = createDefaultState();
-        /** @type {Set<string>} open collapse panel ids per zin */
-        this.openLineIds = new Set(this.state.lines.filter((l) => l.enabled).map((l) => l.id));
+        /** @type {Set<string>} open collapse panel ids per zin — begint leeg: alles dicht */
+        this.openLineIds = new Set();
+        /** Transport-status: spiegelt main.js. Preset-knoppen liggen vast tijdens een lopende auto build-up. */
+        this.playing = false;
+        /** Snapshot van de standaard-progressie; gezet bij elke volledige state-wissel. */
+        this.baseline = null;
         this.bindGlobal();
+        this.buildOffPathUI();
+        this.baseline = progressionSnapshot(this.state);
         this.renderPhaseButtons();
         this.syncArcControls();
         this.syncPhaseButtons();
         this.syncTransport();
+        this.syncPresetButtons();
         this.renderLines();
         this.updateDebug();
+    }
+
+    /** main.js meldt play/stop; presets liggen vast zolang een auto build-up speelt. */
+    setPlaying(isPlaying) {
+        this.playing = !!isPlaying;
+        this.syncPresetButtons();
+    }
+
+    /** Grijs de preset-knoppen uit terwijl we in een lopende auto build-up zitten. */
+    syncPresetButtons() {
+        const arcOn = this.state.arc?.enabled !== false;
+        const lock = this.playing && arcOn;
+        this.root.querySelectorAll('[data-preset]').forEach((btn) => {
+            btn.disabled = lock;
+        });
     }
 
     syncTransport() {
@@ -63,13 +86,24 @@ export class Dashboard {
         }
     }
 
+    /** Fase-namen uit de huidige state (per-preset), met fallback op de standaard. */
+    phaseLabels() {
+        return resolvePhases(this.state).labels;
+    }
+
     renderPhaseButtons() {
         if (!this.phaseBtnsEl) return;
-        // Full timeline: 6 build-up phases + 2 mirrored fade-out phases (Drone ↓,
-        // Air ↓). A fade button previews the thinned ending (its mirrored layer set).
+        // Full timeline: 6 build-up phases + 2 mirrored fade-out phases. A fade
+        // button previews the thinned ending (its mirrored layer set). Labels komen
+        // uit de preset, dus elke preset toont z'n eigen fase-namen.
+        const labels = timelineLabelsFor(this.phaseLabels());
         this.phaseBtnsEl.innerHTML = Array.from({ length: TIMELINE_PHASES }, (_, i) =>
-            `<button type="button" class="ls-btn ls-btn--phase${i >= ARC_PHASES ? ' ls-btn--fade' : ''}" data-phase="${i}" title="Go to ${TIMELINE_LABELS[i]}">${TIMELINE_LABELS[i]}</button>`
+            `<button type="button" class="ls-btn ls-btn--phase${i >= ARC_PHASES ? ' ls-btn--fade' : ''}" data-phase="${i}" title="Go to ${labels[i]}">${labels[i]}</button>`
         ).join('');
+        if (this.arcHintEl) {
+            this.arcHintEl.textContent = `${labels.join(' → ')}. Each line enters "from" a phase and stays; the fade-out drops the dense layers and ends on the drone bed.`;
+        }
+        this._livePhase = null; // verse knoppen → laat de volgende tick de ring herplaatsen
         this.phaseBtnsEl.querySelectorAll('[data-phase]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const i = Number(btn.dataset.phase);
@@ -96,15 +130,88 @@ export class Dashboard {
         this.phaseBtnsEl.querySelectorAll('[data-phase]').forEach((btn) => {
             btn.classList.toggle('is-active', Number(btn.dataset.phase) === p);
         });
+        this.syncPhaseMarkers();
+        this.syncPausedHint();
+    }
+
+    /**
+     * Klik grijpt het roer: zodra je tijdens een lopende auto build-up op een fase
+     * springt, is de automaat onderbroken. Toon een regel die dat zegt én hoe je
+     * het roer teruggeeft (dezelfde fase nogmaals klikken). Alleen zichtbaar als
+     * de auto build-up aan staat (anders is er niets om te hervatten).
+     */
+    syncPausedHint() {
+        if (!this.phaseBtnsEl) return;
+        if (!this.pausedNoteEl) {
+            this.pausedNoteEl = document.createElement('p');
+            this.pausedNoteEl.className = 'ls-arc-paused';
+            this.pausedNoteEl.hidden = true;
+            this.phaseBtnsEl.insertAdjacentElement('afterend', this.pausedNoteEl);
+        }
+        const tp = this.state.previewPhase;
+        const arcOn = this.state.arc?.enabled !== false;
+        const paused = tp != null && arcOn;
+        if (paused) {
+            const label = timelineLabelsFor(this.phaseLabels())[tp] ?? '';
+            this.pausedNoteEl.textContent = `⏸ Build-up paused on ${label} — click that phase again to resume the automatic build-up.`;
+            this.pausedNoteEl.hidden = false;
+        } else {
+            this.pausedNoteEl.hidden = true;
+        }
+    }
+
+    /**
+     * Live indicator: ring rond de nu-klinkende build-up-fase tijdens automatisch
+     * afspelen (main.js voedt de fase-index uit de transport-klok). `null` = uit.
+     * Alleen DOM aanraken bij een fase-wissel, niet elke animatieframe.
+     */
+    highlightLivePhase(idx) {
+        if (!this.phaseBtnsEl) return;
+        if (this._livePhase === idx) return;
+        this._livePhase = idx;
+        this.phaseBtnsEl.querySelectorAll('[data-phase]').forEach((btn) => {
+            btn.classList.toggle('is-live', idx != null && Number(btn.dataset.phase) === idx);
+        });
+    }
+
+    /**
+     * Effectief getoonde aan/uit-staat van een lijn. Zonder fase-preview = de
+     * handmatige `enabled`. Tijdens een fase-sprong telt een lijn alleen als
+     * "aan" wanneer ze in die fase klinkt (enterAt ≤ drempel) — zo ziet een nog
+     * niet ingestapte lijn er exact uit als een uitgevinkte: vinkje uit, "· off".
+     */
+    displayEnabled(line) {
+        if (!line.enabled) return false;
+        const tp = this.state.previewPhase;
+        if (tp == null) return true;
+        return clampPhase(line.enterAt ?? 0) <= previewThreshold(tp);
+    }
+
+    /**
+     * Fase-preview: laat elke lijn de getoonde aan/uit-staat aannemen (vinkje +
+     * dim + "· off"), zodat de gekozen fase leesbaar is via dezelfde taal als
+     * een handmatig uitgezette lijn. Geen aparte markering.
+     */
+    syncPhaseMarkers() {
+        if (!this.linesEl) return;
+        this.state.lines.forEach((line, index) => {
+            const el = this.linesEl.querySelector(`[data-line-id="${line.id}"]`);
+            if (!el) return;
+            const shown = this.displayEnabled(line);
+            el.classList.toggle('is-enabled', shown);
+            const cb = el.querySelector('[data-field="enabled"]');
+            if (cb) cb.checked = shown;
+            this.updateLineSummary(el, line, index);
+        });
     }
 
     lineSummary(line, index) {
         const inst = getInstrument(line.instrumentId);
         const v = line.variantIndex ?? 0;
-        const on = line.enabled ? '' : ' · off';
+        const on = this.displayEnabled(line) ? '' : ' · off';
         const enterAt = clampPhase(line.enterAt ?? 0);
         const arcEnabled = this.state.arc?.enabled !== false;
-        const phase = arcEnabled && enterAt > 0 ? ` · from ${PHASE_LABELS[enterAt]}` : '';
+        const phase = arcEnabled && enterAt > 0 ? ` · from ${this.phaseLabels()[enterAt]}` : '';
         return `line ${index + 1} · ${inst.label} · v${v}${phase}${on}`;
     }
 
@@ -114,6 +221,75 @@ export class Dashboard {
         if (this.arcToggle) this.arcToggle.checked = arc.enabled !== false;
         if (this.arcMinutes) this.arcMinutes.value = String(minutes);
         if (this.arcMinutesValue) this.arcMinutesValue.textContent = String(minutes);
+    }
+
+    /**
+     * "Off the path"-blok onder de build-up: een 'Following preset'-vinkje als
+     * status én een melding + Reset-knop wanneer de progressie afwijkt van de
+     * geladen preset. Dynamisch ingevoegd (de panel-markup staat 3× gedupliceerd,
+     * dus niet in de markup zelf). Klank-keuzes blijven; alleen de progressie reset.
+     */
+    buildOffPathUI() {
+        const anchor = this.root.querySelector('.ls-phases');
+        if (!anchor || this.offPathEl) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'ls-progression';
+        wrap.innerHTML = `
+            <label class="ls-follow">
+                <input type="checkbox" data-field="follow-preset" checked>
+                <span>Following preset</span>
+            </label>
+            <button type="button" class="ls-btn ls-btn--ghost ls-reset-prog" data-action="reset-progression" hidden>Reset progression</button>
+            <p class="ls-offpath-note" hidden>Off the standard build-up progression — your sounds are kept.</p>
+        `;
+        anchor.insertAdjacentElement('afterend', wrap);
+        this.offPathEl = wrap;
+        this.followCb = wrap.querySelector('[data-field="follow-preset"]');
+        this.resetProgBtn = wrap.querySelector('[data-action="reset-progression"]');
+        this.offPathNote = wrap.querySelector('.ls-offpath-note');
+        this.followCb.addEventListener('change', () => {
+            // Re-checken = terug naar het standaardpad. Het pad verlaat je door te
+            // editen, niet via dit vinkje — dus uitvinken zet enkel de status terug.
+            if (this.followCb.checked) this.resetProgression();
+            else this.syncOffPath();
+        });
+        this.resetProgBtn.addEventListener('click', () => this.resetProgression());
+    }
+
+    /** Toon of we nog op het standaardpad zitten (vinkje aan) of ervan af (melding + Reset). */
+    syncOffPath() {
+        if (!this.offPathEl || !this.baseline) return;
+        const onPath = sameProgression(progressionSnapshot(this.state), this.baseline);
+        if (this.followCb) this.followCb.checked = onPath;
+        if (this.resetProgBtn) this.resetProgBtn.hidden = onPath;
+        if (this.offPathNote) this.offPathNote.hidden = onPath;
+    }
+
+    /**
+     * Zet enkel de progressie terug naar de baseline: arc, fase-set en per regel
+     * de instap-fase + cycling (gematcht op id). Instrument, volume, effecten en
+     * vaste variant blijven onaangeroerd. Door de gebruiker toegevoegde regels
+     * blijven staan; verwijderde regels worden niet teruggehaald.
+     */
+    resetProgression() {
+        if (!this.baseline) return;
+        const base = this.baseline;
+        this.state.arc = { enabled: base.arc.enabled, minutes: base.arc.minutes };
+        this.state.phases = { labels: [...base.phases.labels], weights: [...base.phases.weights] };
+        const baseById = new Map(base.lines.map((l) => [l.id, l]));
+        this.state.lines.forEach((line) => {
+            const b = baseById.get(line.id);
+            if (!b) return;
+            line.enterAt = b.enterAt;
+            line.variantCycle = { enabled: b.variantCycle.enabled, count: b.variantCycle.count, cycles: b.variantCycle.cycles };
+        });
+        this.state.previewPhase = null; // terug naar automatische opbouw
+        this.syncArcControls();
+        this.renderPhaseButtons();
+        this.syncPhaseButtons();
+        this.renderLines();
+        this.updateDebug();
+        this.callbacks.onChange();
     }
 
     getState() {
@@ -127,24 +303,31 @@ export class Dashboard {
         this.state = next;
         if (!this.state.arc) this.state.arc = { ...DEFAULT_ARC };
         if (this.state.master == null) this.state.master = prevMaster ?? DEFAULT_MASTER;
-        // Bij herladen opnieuw standaard alles openzetten (anders vallen collapse heads mismatch).
-        this.openLineIds = new Set(this.state.lines.filter((l) => l.enabled).map((l) => l.id));
+        // Nieuw standaardpad: dit is voortaan "de progressie" om naar terug te keren.
+        this.baseline = progressionSnapshot(this.state);
+        // Bij herladen/preset-wissel alles dicht — de gebruiker klapt zelf open wat hij nodig heeft.
+        this.openLineIds = new Set();
         this.renderLines();
         this.updateDebug();
         this.syncArcControls();
+        this.renderPhaseButtons();
         this.syncPhaseButtons();
         this.syncTransport();
+        this.syncPresetButtons();
     }
 
     bindGlobal() {
-        // Vaste presets: laden én starten.
+        // Vaste presets: een handgekozen statische scène. Laden zet de auto
+        // build-up uit en start NIET vanzelf — de gebruiker drukt zelf op Start.
         this.root.querySelectorAll('[data-preset]').forEach((btn) => {
             btn.addEventListener('click', () => {
+                if (btn.disabled) return; // vergrendeld tijdens een lopende auto build-up
                 const state = applyPreset(btn.getAttribute('data-preset'));
                 if (state) {
+                    if (!state.arc) state.arc = { ...DEFAULT_ARC };
+                    state.arc.enabled = false;
                     this.setState(state);
                     this.callbacks.onChange();
-                    this.callbacks.ensurePlaying?.();
                 }
             });
         });
@@ -173,6 +356,8 @@ export class Dashboard {
                 if (!this.state.arc) this.state.arc = { ...DEFAULT_ARC };
                 this.state.arc.enabled = this.arcToggle.checked;
                 this.renderLines();
+                this.syncPresetButtons();
+                this.syncPausedHint();
                 this.callbacks.onChange();
                 this.updateDebug();
             });
@@ -206,6 +391,7 @@ export class Dashboard {
         if (this.debugEl) {
             this.debugEl.textContent = compose(this.state);
         }
+        this.syncOffPath();
     }
 
     renderLines() {
@@ -214,14 +400,16 @@ export class Dashboard {
         this.state.lines.forEach((line, index) => {
             this.linesEl.appendChild(this.buildLineEl(line, index));
         });
+        this.syncPhaseMarkers();
     }
 
     buildLineEl(line, index) {
         const instrument = getInstrument(line.instrumentId);
         const isOpen = this.openLineIds.has(line.id);
         const collapseId = `line-collapse-${line.id}`;
+        const shown = this.displayEnabled(line);
         const el = document.createElement('article');
-        el.className = 'ls-line' + (line.enabled ? ' is-enabled' : '');
+        el.className = 'ls-line' + (shown ? ' is-enabled' : '');
         el.dataset.lineId = line.id;
 
         const effects = line.effects || [];
@@ -240,7 +428,7 @@ export class Dashboard {
                     <span class="ls-line-summary" data-field="summary">${this.lineSummary(line, index)}</span>
                 </button>
                 <label class="ls-line-enable" data-action="stop-prop">
-                    <input type="checkbox" data-field="enabled" ${line.enabled ? 'checked' : ''}>
+                    <input type="checkbox" data-field="enabled" ${shown ? 'checked' : ''}>
                     <span>On</span>
                 </label>
                 <button type="button" class="ls-line-remove" data-action="remove" aria-label="Remove line">×</button>
@@ -257,13 +445,9 @@ export class Dashboard {
                             <input type="range" data-field="volume" min="0" max="1" step="0.05" value="${line.volume}">
                             <output>${line.volume}</output>
                         </label>
-                        <label class="ls-field ls-field--full">
-                            <span class="ls-label">Enter at</span>
-                            <select data-field="enter-at">${this.phaseOptionsHtml(line.enterAt ?? 0)}</select>
-                        </label>
                         ${(instrument.tags || []).includes('note') ? `
                         <label class="ls-field ls-field--full">
-                            <span class="ls-label">Anchor (octaaf-dubbel)</span>
+                            <span class="ls-label">Anchor (octave double)</span>
                             <select data-field="anchor">${this.anchorOptionsHtml(line.anchor)}</select>
                         </label>` : ''}
                     </div>
@@ -271,8 +455,8 @@ export class Dashboard {
                     ${this.buildEffectSlotHtml(line, instrument, effects[1], 1)}
                     <div class="ls-variations">
                         <span class="ls-label">Variants</span>
-                        <div class="ls-variant-btns" role="group" aria-label="Sound variants 0 to 7">
-                            ${Array.from({ length: VARIANT_COUNT }, (_, i) => {
+                        <div class="ls-variant-btns" role="group" aria-label="Sound variants">
+                            ${Array.from({ length: variantCount(instrument) }, (_, i) => {
                                 const active = (line.variantIndex ?? 0) === i ? ' is-active' : '';
                                 return `<button type="button" class="ls-btn ls-btn--variant${active}" data-action="variant" data-variant="${i}" title="Variant ${i} — preview and pick">${i}</button>`;
                             }).join('')}
@@ -280,17 +464,14 @@ export class Dashboard {
                         <div class="ls-variant-cycle">
                             <label class="ls-field ls-field--inline">
                                 <span class="ls-label">Cycle</span>
-                                <select data-field="cycle-count">${this.cycleCountOptionsHtml(line.variantCycle)}</select>
+                                <select data-field="cycle-count">${this.cycleCountOptionsHtml(line.variantCycle, instrument)}</select>
                             </label>
                             <label class="ls-field ls-field--inline">
                                 <span class="ls-label">hold</span>
                                 <input type="number" data-field="cycle-hold" min="1" max="16" step="1" value="${line.variantCycle?.cycles ?? 4}">
-                                <span class="ls-unit">cycli</span>
                             </label>
+                            <button type="button" class="ls-btn ls-btn--play ls-line-play" data-action="oneshot-line" title="Play this line once">▶ line</button>
                         </div>
-                    </div>
-                    <div class="ls-line-actions">
-                        <button type="button" class="ls-btn ls-btn--play" data-action="oneshot-line" title="Play this line once">▶ line</button>
                     </div>
                 </div>
             </div>
@@ -300,15 +481,6 @@ export class Dashboard {
         return el;
     }
 
-    phaseOptionsHtml(selected) {
-        const sel = clampPhase(selected);
-        return Array.from({ length: ARC_PHASES }, (_, i) => {
-            const isSel = i === sel ? ' selected' : '';
-            const label = i === 0 ? `1 · from start` : `${i + 1} · ${PHASE_LABELS[i]}`;
-            return `<option value="${i}"${isSel}>${label}</option>`;
-        }).join('');
-    }
-
     updateLineSummary(el, line, index) {
         const summary = el.querySelector('[data-field="summary"]');
         if (summary) summary.textContent = this.lineSummary(line, index);
@@ -316,14 +488,20 @@ export class Dashboard {
 
     anchorOptionsHtml(anchor) {
         const cur = anchor && anchor.enabled ? (anchor.octaves || 1) : 0;
-        return [[0, 'uit'], [1, '+1 oct'], [2, '+2 oct']]
+        return [[0, 'off'], [1, '+1 oct'], [2, '+2 oct']]
             .map(([v, label]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${label}</option>`)
             .join('');
     }
 
-    cycleCountOptionsHtml(vc) {
-        const cur = vc && vc.enabled ? (vc.count || 3) : 0;
-        return [[0, 'uit'], [2, '2'], [3, '3'], [4, '4'], [6, '6'], [8, '8']]
+    cycleCountOptionsHtml(vc, instrument) {
+        // Alleen geldige aantallen: 2..(aantal distincte varianten van dit
+        // instrument). Meer cyclen dan er varianten zijn = stille herhaling, dus
+        // tonen we niet. Zo werkt elk getoond aantal écht (bv. een cyclus van 5).
+        const max = variantCount(instrument);
+        const cur = vc && vc.enabled ? Math.min(max, vc.count || 3) : 0;
+        const opts = [[0, 'off']];
+        for (let n = 2; n <= max; n++) opts.push([n, String(n)]);
+        return opts
             .map(([v, label]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${label}</option>`)
             .join('');
     }
@@ -345,6 +523,7 @@ export class Dashboard {
     }
 
     clearLiveHighlights() {
+        this.highlightLivePhase(null); // ook de live fase-ring doven bij stop
         if (!this.linesEl) return;
         this.linesEl.querySelectorAll('.ls-btn--variant.is-live').forEach((b) => b.classList.remove('is-live'));
     }
@@ -357,7 +536,7 @@ export class Dashboard {
         const valueInput = this.buildValueInput(fx, slot, slotIndex);
 
         const modToggle = canMod
-            ? `<button type="button" class="ls-btn ls-btn--mod${modOn ? ' is-active' : ''}" data-action="toggle-mod" title="${modOn ? 'Wave modulation on' : 'Drive this with a wave'}">~</button>`
+            ? `<button type="button" class="ls-btn ls-btn--mod${modOn ? ' is-active' : ''}" data-action="toggle-mod" title="${modOn ? 'Wave modulation on' : 'Drive this with a wave'}" aria-label="${modOn ? 'Wave modulation on' : 'Drive this with a wave'}"><span class="material-symbols-outlined ls-icon" aria-hidden="true">airwave</span></button>`
             : '<span class="ls-effect-spacer" aria-hidden="true"></span>';
 
         return `
@@ -367,8 +546,10 @@ export class Dashboard {
                     <select data-field="effect-id">${effectOptionsHtml(instrument, slot.effectId)}</select>
                 </label>
                 ${valueInput}
-                ${modToggle}
-                ${canOneShot ? `<button type="button" class="ls-btn ls-btn--play ls-btn--oneshot" data-action="oneshot-effect" data-effect-id="${fx.id}" title="Play effect once">▶</button>` : '<span class="ls-effect-spacer" aria-hidden="true"></span>'}
+                <div class="ls-effect-actions">
+                    ${modToggle}
+                    ${canOneShot ? `<button type="button" class="ls-btn ls-btn--play ls-btn--oneshot" data-action="oneshot-effect" data-effect-id="${fx.id}" title="Play effect once">▶</button>` : '<span class="ls-effect-spacer" aria-hidden="true"></span>'}
+                </div>
             </div>
             ${modOn ? this.buildModPanel(slot, slotIndex) : ''}
         `;
@@ -448,15 +629,9 @@ export class Dashboard {
 
         el.querySelector('[data-field="enabled"]').addEventListener('change', (e) => {
             line.enabled = e.target.checked;
-            el.classList.toggle('is-enabled', line.enabled);
+            el.classList.toggle('is-enabled', this.displayEnabled(line));
             this.updateLineSummary(el, line, lineIndex);
-            // Niet-gebruikte (uitgeschakelde) regels inklappen; ingeschakelde uitklappen.
-            const collapseEl = el.querySelector('[data-line-collapse]');
-            const Collapse = globalThis.bootstrap && globalThis.bootstrap.Collapse;
-            if (collapseEl && Collapse) {
-                const inst = Collapse.getOrCreateInstance(collapseEl, { toggle: false });
-                if (line.enabled) inst.show(); else inst.hide();
-            }
+            // Aan/uit raakt het open/dicht-zijn niet: de balk bestuurt dat zelf.
             notify();
         });
 
@@ -482,12 +657,6 @@ export class Dashboard {
                 this.callbacks.onVariant(line, index);
                 notify();
             });
-        });
-
-        el.querySelector('[data-field="enter-at"]')?.addEventListener('change', (e) => {
-            line.enterAt = clampPhase(e.target.value);
-            this.updateLineSummary(el, line, lineIndex);
-            notify();
         });
 
         el.querySelector('[data-field="anchor"]')?.addEventListener('change', (e) => {

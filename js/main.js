@@ -1,8 +1,8 @@
 /**
  * Left Strudel — orchestratie, transport, debounced evaluate.
  */
-import { Dashboard } from './dashboard.js?v=17';
-import { compose, countActiveLines } from './composer.js?v=16';
+import { Dashboard } from './dashboard.js?v=18';
+import { compose, countActiveLines, arcPhaseCycleArray, arcPhaseAtCycle, resolvePhases } from './composer.js?v=17';
 import { getStrudelRuntime, evaluateCode, stopAll, isSamplesReady } from './strudel-runtime.js?v=14';
 import {
     playLineBurst,
@@ -16,9 +16,9 @@ import {
     saveStateByName,
     getPresetNameFromUrl,
     getActivePresetName
-} from './storage.js?v=14';
+} from './storage.js?v=15';
 import { loadInstruments } from './catalog/instruments.js?v=14';
-import { PANEL_HTML } from './panel.js?v=16';
+import { PANEL_HTML } from './panel.js?v=17';
 
 const DEBOUNCE_MS = 300;
 
@@ -173,6 +173,18 @@ function startHighlightLoop(dashboard) {
         // Raw figures only — the host derives arc phase/progress from cpm + arc.
         if (transportStartCycle == null && cycle > 0) transportStartCycle = cycle;
         const st = dashboard.getState();
+
+        // Live build-up-fase in de knoppenbalk: alleen tijdens automatische opbouw
+        // (geen handmatige preview, arc aan). De fase volgt dezelfde cycli-mapping
+        // als de audio-mask, dus de ring loopt in de maat.
+        let livePhase = null;
+        if (st.previewPhase == null && st.arc?.enabled !== false) {
+            const { weights } = resolvePhases(st);
+            const cycleArr = arcPhaseCycleArray(st.cpm, st.arc?.minutes, weights);
+            livePhase = arcPhaseAtCycle(cycle, cycleArr);
+        }
+        dashboard.highlightLivePhase(livePhase);
+
         window.algoraveTransport = {
             playing: true,
             cycle,
@@ -203,6 +215,7 @@ async function startPlayback(dashboard) {
         await getStrudelRuntime();
         const samples = isSamplesReady() ? '' : ' (synth-only)';
         playing = true;
+        dashboard.setPlaying?.(true);
         transportStartCycle = null; // recapture the baseline for this take
         btnStop.disabled = false;
         btnPlay.classList.add('is-active');
@@ -216,6 +229,7 @@ async function startPlayback(dashboard) {
         console.error(err);
         setStatus('Failed to load Strudel', 'is-error');
         playing = false;
+        dashboard.setPlaying?.(false);
     } finally {
         if (btnPlay) btnPlay.disabled = false;
     }
@@ -234,6 +248,7 @@ function initTransport(dashboard) {
             console.warn(e);
         }
         playing = false;
+        dashboard.setPlaying?.(false);
         transportStartCycle = null;
         if (window.algoraveTransport) window.algoraveTransport.playing = false;
         stopHighlightLoop(dashboard);
