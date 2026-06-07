@@ -1,7 +1,7 @@
 /**
  * DOM: regels renderen, events, debug-paneel.
  */
-import { createLine, compose, applyPreset, activeVariantAt, ARC_PHASES, TIMELINE_PHASES, DEFAULT_ARC, DEFAULT_MASTER, clampPhase, previewThreshold, resolvePhases, timelineLabelsFor, progressionSnapshot, sameProgression } from './composer.js?v=17';
+import { createLine, compose, applyPreset, activeVariantAt, ARC_PHASES, TIMELINE_PHASES, DEFAULT_ARC, DEFAULT_MASTER, clampPhase, previewThreshold, resolvePhases, timelineLabelsFor, progressionSnapshot, sameProgression, clampHold } from './composer.js?v=18';
 import { getInstrument, instrumentOptionsHtml } from './catalog/instruments.js?v=14';
 import {
     getEffect,
@@ -207,7 +207,8 @@ export class Dashboard {
 
     lineSummary(line, index) {
         const inst = getInstrument(line.instrumentId);
-        const v = line.variantIndex ?? 0;
+        const variants = line.variants || [0];
+        const v = variants.length > 1 ? variants.join('→') : (variants[0] ?? 0);
         const on = this.displayEnabled(line) ? '' : ' · off';
         const enterAt = clampPhase(line.enterAt ?? 0);
         const arcEnabled = this.state.arc?.enabled !== false;
@@ -281,7 +282,8 @@ export class Dashboard {
             const b = baseById.get(line.id);
             if (!b) return;
             line.enterAt = b.enterAt;
-            line.variantCycle = { enabled: b.variantCycle.enabled, count: b.variantCycle.count, cycles: b.variantCycle.cycles };
+            line.variants = [...b.variants];
+            line.variantCycle = { cycles: b.hold };
         });
         this.state.previewPhase = null; // terug naar automatische opbouw
         this.syncArcControls();
@@ -454,21 +456,14 @@ export class Dashboard {
                     ${this.buildEffectSlotHtml(line, instrument, effects[0], 0)}
                     ${this.buildEffectSlotHtml(line, instrument, effects[1], 1)}
                     <div class="ls-variations">
-                        <span class="ls-label">Variants</span>
+                        <span class="ls-label">Variants — check to rotate</span>
                         <div class="ls-variant-btns" role="group" aria-label="Sound variants">
-                            ${Array.from({ length: variantCount(instrument) }, (_, i) => {
-                                const active = (line.variantIndex ?? 0) === i ? ' is-active' : '';
-                                return `<button type="button" class="ls-btn ls-btn--variant${active}" data-action="variant" data-variant="${i}" title="Variant ${i} — preview and pick">${i}</button>`;
-                            }).join('')}
+                            ${Array.from({ length: variantCount(instrument) }, (_, i) => this.variantToggleHtml(line, i)).join('')}
                         </div>
                         <div class="ls-variant-cycle">
-                            <label class="ls-field ls-field--inline">
-                                <span class="ls-label">Cycle</span>
-                                <select data-field="cycle-count">${this.cycleCountOptionsHtml(line.variantCycle, instrument)}</select>
-                            </label>
-                            <label class="ls-field ls-field--inline">
+                            <label class="ls-field ls-field--inline ls-hold-field"${(line.variants?.length > 1) ? '' : ' hidden'}>
                                 <span class="ls-label">hold</span>
-                                <input type="number" data-field="cycle-hold" min="1" max="16" step="1" value="${line.variantCycle?.cycles ?? 4}">
+                                <input type="number" data-field="cycle-hold" min="1" max="16" step="1" value="${clampHold(line.variantCycle?.cycles)}">
                             </label>
                             <button type="button" class="ls-btn ls-btn--play ls-line-play" data-action="oneshot-line" title="Play this line once">▶ line</button>
                         </div>
@@ -493,17 +488,37 @@ export class Dashboard {
             .join('');
     }
 
-    cycleCountOptionsHtml(vc, instrument) {
-        // Alleen geldige aantallen: 2..(aantal distincte varianten van dit
-        // instrument). Meer cyclen dan er varianten zijn = stille herhaling, dus
-        // tonen we niet. Zo werkt elk getoond aantal écht (bv. een cyclus van 5).
-        const max = variantCount(instrument);
-        const cur = vc && vc.enabled ? Math.min(max, vc.count || 3) : 0;
-        const opts = [[0, 'off']];
-        for (let n = 2; n <= max; n++) opts.push([n, String(n)]);
-        return opts
-            .map(([v, label]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${label}</option>`)
-            .join('');
+    /**
+     * Eén variant-vakje. Aangevinkt = in de rotatie; bij 2+ toont een klein
+     * volgnummer de plek in de klik-volgorde. Eén aangevinkt = de vaste klank.
+     */
+    variantToggleHtml(line, i) {
+        const variants = line.variants || [];
+        const pos = variants.indexOf(i);
+        const checked = pos >= 0;
+        const order = checked && variants.length > 1 ? `<sup class="ls-variant-order">${pos + 1}</sup>` : '';
+        return `<button type="button" class="ls-btn ls-btn--variant${checked ? ' is-checked' : ''}" data-action="variant-toggle" data-variant="${i}" aria-pressed="${checked}" title="Variant ${i} — check to add to the rotation">${i}${order}</button>`;
+    }
+
+    /** Werk de vinkjes + volgnummers + de hold-zichtbaarheid in-place bij. */
+    syncVariantArea(el, line) {
+        const variants = line.variants || [];
+        el.querySelectorAll('[data-action="variant-toggle"]').forEach((b) => {
+            const i = Number(b.dataset.variant);
+            const pos = variants.indexOf(i);
+            const checked = pos >= 0;
+            b.classList.toggle('is-checked', checked);
+            b.setAttribute('aria-pressed', String(checked));
+            let sup = b.querySelector('.ls-variant-order');
+            if (checked && variants.length > 1) {
+                if (!sup) { sup = document.createElement('sup'); sup.className = 'ls-variant-order'; b.appendChild(sup); }
+                sup.textContent = String(pos + 1);
+            } else if (sup) {
+                sup.remove();
+            }
+        });
+        const holdField = el.querySelector('.ls-hold-field');
+        if (holdField) holdField.hidden = variants.length < 2;
     }
 
     /** Live: licht de nu-klinkende variant op bij cycling-regels (klok = getTime, cycli). */
@@ -512,8 +527,8 @@ export class Dashboard {
         this.state.lines.forEach((line) => {
             const el = this.linesEl.querySelector(`[data-line-id="${line.id}"]`);
             if (!el) return;
-            const btns = el.querySelectorAll('[data-action="variant"]');
-            if (!(line.variantCycle && line.variantCycle.enabled)) {
+            const btns = el.querySelectorAll('[data-action="variant-toggle"]');
+            if (!(Array.isArray(line.variants) && line.variants.length > 1)) {
                 btns.forEach((b) => b.classList.remove('is-live'));
                 return;
             }
@@ -639,22 +654,27 @@ export class Dashboard {
             line.instrumentId = e.target.value;
             const inst = getInstrument(line.instrumentId);
             line.volume = inst.defaultVolume ?? line.volume;
-            line.variantIndex = 0;
+            line.variants = [0]; // ander instrument → terug naar de eerste variant
             const wasOpen = this.openLineIds.has(line.id);
             this.renderLines();
             if (wasOpen) this.openLineIds.add(line.id);
             notify();
         });
 
-        el.querySelectorAll('[data-action="variant"]').forEach((btn) => {
+        el.querySelectorAll('[data-action="variant-toggle"]').forEach((btn) => {
             btn.addEventListener('click', () => {
-                const index = Number(btn.dataset.variant);
-                line.variantIndex = index;
-                el.querySelectorAll('[data-action="variant"]').forEach((b) => {
-                    b.classList.toggle('is-active', Number(b.dataset.variant) === index);
-                });
+                const i = Number(btn.dataset.variant);
+                if (!Array.isArray(line.variants)) line.variants = [];
+                const pos = line.variants.indexOf(i);
+                if (pos >= 0) {
+                    // Uitvinken, maar minstens één variant blijft staan.
+                    if (line.variants.length > 1) line.variants.splice(pos, 1);
+                } else {
+                    line.variants.push(i); // aangevinkt → achteraan = klik-volgorde
+                    this.callbacks.onVariant(line, i); // speel de zojuist aangevinkte even voor
+                }
+                this.syncVariantArea(el, line);
                 this.updateLineSummary(el, line, lineIndex);
-                this.callbacks.onVariant(line, index);
                 notify();
             });
         });
@@ -667,20 +687,9 @@ export class Dashboard {
             notify();
         });
 
-        el.querySelector('[data-field="cycle-count"]')?.addEventListener('change', (e) => {
-            const v = Number(e.target.value);
-            if (!line.variantCycle) line.variantCycle = { enabled: false, count: 3, cycles: 4 };
-            line.variantCycle.enabled = v >= 2;
-            if (v >= 2) line.variantCycle.count = v;
-            if (!line.variantCycle.enabled) {
-                el.querySelectorAll('[data-action="variant"]').forEach((b) => b.classList.remove('is-live'));
-            }
-            notify();
-        });
-
         el.querySelector('[data-field="cycle-hold"]')?.addEventListener('input', (e) => {
-            if (!line.variantCycle) line.variantCycle = { enabled: false, count: 3, cycles: 4 };
-            line.variantCycle.cycles = Math.max(1, Math.min(16, Number(e.target.value) || 4));
+            if (!line.variantCycle) line.variantCycle = {};
+            line.variantCycle.cycles = clampHold(e.target.value);
             notify();
         });
 

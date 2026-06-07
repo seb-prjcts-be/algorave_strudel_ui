@@ -502,6 +502,7 @@ body {
 }
 
 .ls-btn--variant {
+    position: relative;
     padding: 0.28rem 0;
     min-width: 0;
     font-family: var(--ls-mono);
@@ -516,10 +517,22 @@ body {
     background: var(--ls-bg-tile-hover);
 }
 
-.ls-btn--variant.is-active {
+.ls-btn--variant.is-active,
+.ls-btn--variant.is-checked {
     background: var(--ls-fg);
     color: var(--ls-bg);
     border-color: var(--ls-fg);
+}
+
+/* Volgnummer in de rotatie (klik-volgorde), klein hoekje rechtsboven. */
+.ls-variant-order {
+    position: absolute;
+    top: -1px;
+    right: 1px;
+    font-size: 0.5rem;
+    line-height: 1;
+    color: inherit;
+    opacity: 0.85;
 }
 
 /* Live: de nu-klinkende variant tijdens cycling — een ring die meebeweegt. */

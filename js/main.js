@@ -1,8 +1,8 @@
 /**
  * Left Strudel — orchestratie, transport, debounced evaluate.
  */
-import { Dashboard } from './dashboard.js?v=18';
-import { compose, countActiveLines, arcPhaseCycleArray, arcPhaseAtCycle, resolvePhases } from './composer.js?v=17';
+import { Dashboard } from './dashboard.js?v=19';
+import { compose, countActiveLines, arcPhaseCycleArray, arcPhaseAtCycle, resolvePhases } from './composer.js?v=18';
 import { getStrudelRuntime, evaluateCode, stopAll, isSamplesReady } from './strudel-runtime.js?v=14';
 import {
     playLineBurst,
@@ -10,13 +10,13 @@ import {
     playEffectBurst,
     playEffectStandalone,
     cancelBurstTimer
-} from './oneshot.js?v=16';
+} from './oneshot.js?v=17';
 import {
     loadStateByName,
     saveStateByName,
     getPresetNameFromUrl,
     getActivePresetName
-} from './storage.js?v=15';
+} from './storage.js?v=16';
 import { loadInstruments } from './catalog/instruments.js?v=14';
 import { PANEL_HTML } from './panel.js?v=17';
 
@@ -314,7 +314,7 @@ async function boot() {
         if (!(await ensureRuntime())) return;
         try {
             if (playing) {
-                await playLineBurst(dashboard.getState(), { ...line, variantIndex: index });
+                await playLineBurst(dashboard.getState(), line, index);
                 setStatus(`Variant ${index} · once`, 'is-playing');
             } else {
                 await playLineStandalone(dashboard.getState(), line, index);

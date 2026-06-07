@@ -3,7 +3,7 @@
  */
 import { getInstrument } from './catalog/instruments.js?v=14';
 import { getEffect } from './catalog/effects.js?v=14';
-import { buildInstrumentBase } from './catalog/variations.js?v=15';
+import { buildInstrumentBase, variantCount, VARIANT_COUNT } from './catalog/variations.js?v=15';
 import { modValuePattern } from './modulation.js?v=14';
 
 /** Aantal fases in de auto-opbouw — 6 voor een fijnmazige opbouw over minuten. */
@@ -72,8 +72,8 @@ export function timelineLabelsFor(labels) {
 
 /**
  * Snapshot van enkel de PROGRESSIE-velden — hoe het stuk over tijd evolueert:
- * de arc, de fase-set, en per regel de instap-fase + variant-cycling. Klank-
- * keuzes (instrument, volume, effecten, vaste variant) horen er NIET bij; die
+ * de arc, de fase-set, en per regel de instap-fase + de variant-set (geordend)
+ * + hold. Klank-keuzes (instrument, volume, effecten) horen er NIET bij; die
  * blijven van de gebruiker. Basis voor "van het standaardpad af"-detectie.
  */
 export function progressionSnapshot(state) {
@@ -84,16 +84,17 @@ export function progressionSnapshot(state) {
         lines: ((state && state.lines) || []).map((l) => ({
             id: l.id,
             enterAt: clampPhase(l.enterAt ?? 0),
-            variantCycle: normalizeVariantCycle(l.variantCycle)
+            variants: normalizeVariants(l),
+            hold: clampHold(l.variantCycle?.cycles)
         }))
     };
 }
 
 /**
  * Gelijk = nog op het standaardpad. Vergelijkt arc + fase-set, en per regel de
- * progressie (instap-fase + cycling) gematcht op id. Regels die de gebruiker
- * toevoegde (geen match in de baseline) tellen NIET als afwijking — dat is een
- * sound-keuze, geen progressie-edit.
+ * progressie (instap-fase + variant-set in volgorde + hold) gematcht op id.
+ * Regels die de gebruiker toevoegde (geen match in de baseline) tellen NIET als
+ * afwijking — dat is een sound-keuze, geen progressie-edit.
  */
 export function sameProgression(cur, base) {
     if (!cur || !base) return false;
@@ -105,8 +106,11 @@ export function sameProgression(cur, base) {
         const lb = baseById.get(lc.id);
         if (!lb) continue; // toegevoegde regel telt niet mee
         if (lc.enterAt !== lb.enterAt) return false;
-        const a = lc.variantCycle, b = lb.variantCycle;
-        if (a.enabled !== b.enabled || a.count !== b.count || a.cycles !== b.cycles) return false;
+        if (lc.hold !== lb.hold) return false;
+        if (lc.variants.length !== lb.variants.length) return false;
+        for (let k = 0; k < lc.variants.length; k++) {
+            if (lc.variants[k] !== lb.variants[k]) return false;
+        }
     }
     return true;
 }
@@ -141,8 +145,8 @@ export function createLine(overrides = {}) {
         enabled: overrides.enabled !== false,
         instrumentId: instrument.id,
         volume: overrides.volume ?? instrument.defaultVolume ?? 0.3,
-        variantIndex: overrides.variantIndex ?? 0,
-        variantCycle: normalizeVariantCycle(overrides.variantCycle),
+        variants: normalizeVariants(overrides, variantCount(instrument)),
+        variantCycle: { cycles: clampHold(overrides.variantCycle?.cycles) },
         enterAt: clampPhase(overrides.enterAt ?? 0),
         anchor: normalizeAnchor(overrides.anchor),
         effects: overrides.effects || defaultEffectsFor(instrument)
@@ -168,29 +172,56 @@ const ANCHOR_GAIN = 0.4;
  * reproduceerbaar via `arrange([N, …])`. `count` opeenvolgende varianten vanaf
  * `variantIndex`, elk `cycles` cycli vastgehouden. Lus-periode = count·cycles.
  */
-export function normalizeVariantCycle(vc) {
-    if (!vc || typeof vc !== 'object') return { enabled: false, count: 3, cycles: 4 };
-    return {
-        enabled: vc.enabled === true,
-        count: Math.max(2, Math.min(8, Math.round(Number(vc.count) || 3))),
-        cycles: Math.max(1, Math.min(16, Math.round(Number(vc.cycles) || 4)))
-    };
+/** Hold (cycli per variant) genormaliseerd naar 1..16. */
+export function clampHold(v) {
+    return Math.max(1, Math.min(16, Math.round(Number(v) || 4)));
 }
 
-/** Lijst variant-indices die een regel doorloopt, of null als cycling uit staat. */
-export function variantCycleList(line) {
+/**
+ * Geordende, unieke set variant-indices die een regel doorloopt — in klik-
+ * volgorde. Nieuw model: `line.variants`. Valt terug op het oude model
+ * (variantIndex + variantCycle{enabled,count} → opeenvolgende reeks) zodat
+ * bestaande presets/opslag naadloos blijven werken. `max` = aantal geldige
+ * varianten van het instrument.
+ */
+export function normalizeVariants(line, max = VARIANT_COUNT) {
+    const lim = Math.max(1, Math.round(Number(max) || VARIANT_COUNT));
+    const clampOne = (n) => Math.max(0, Math.min(lim - 1, Math.round(Number(n) || 0)));
+    if (Array.isArray(line.variants) && line.variants.length) {
+        const seen = new Set();
+        const out = [];
+        for (const v of line.variants) {
+            const i = clampOne(v);
+            if (!seen.has(i)) { seen.add(i); out.push(i); }
+        }
+        if (out.length) return out;
+    }
+    const start = clampOne(line.variantIndex);
     const vc = line.variantCycle;
-    if (!vc || !vc.enabled) return null;
-    const start = Math.max(0, Math.min(7, Math.round(Number(line.variantIndex) || 0)));
-    const count = Math.max(2, Math.min(8, vc.count || 3));
-    return Array.from({ length: count }, (_, k) => (start + k) % 8);
+    if (vc && vc.enabled && Number(vc.count) > 1) {
+        const count = Math.min(Math.round(Number(vc.count)), lim);
+        return Array.from({ length: count }, (_, k) => (start + k) % lim);
+    }
+    return [start];
+}
+
+/** Geordende lijst varianten die een regel doorloopt, of null als er één (of geen) is. */
+export function variantCycleList(line) {
+    const list = Array.isArray(line.variants) ? line.variants : [];
+    return list.length > 1 ? list : null;
+}
+
+/** Eerste/vaste variant van een regel (de klank bij niet-cyclen). */
+export function primaryVariant(line) {
+    if (Array.isArray(line.variants) && line.variants.length) return line.variants[0];
+    return line.variantIndex ?? 0;
 }
 
 /** Welke variant klinkt nu, gegeven de cyclus-positie (`getTime()`). */
 export function activeVariantAt(line, cycle) {
     const list = variantCycleList(line);
-    if (!list) return line.variantIndex ?? 0;
-    const n = Math.max(1, line.variantCycle.cycles || 4);
+    if (!list) return primaryVariant(line);
+    const n = clampHold(line.variantCycle?.cycles);
     const period = list.length * n;
     const pos = Math.floor(((((cycle % period) + period) % period)) / n);
     return list[pos];
@@ -301,13 +332,13 @@ export function buildLineChain(line, variantOverride) {
     const cycleList = variantOverride == null ? variantCycleList(line) : null;
     let chain;
     if (cycleList) {
-        const n = Math.max(1, line.variantCycle.cycles || 4);
+        const n = clampHold(line.variantCycle?.cycles);
         const sections = cycleList
             .map((i) => `[${n}, ${buildInstrumentBase(instrument, i)}]`)
             .join(', ');
         chain = `arrange(${sections})`;
     } else {
-        const variant = variantOverride ?? line.variantIndex ?? 0;
+        const variant = variantOverride ?? primaryVariant(line);
         chain = buildInstrumentBase(instrument, variant);
     }
 

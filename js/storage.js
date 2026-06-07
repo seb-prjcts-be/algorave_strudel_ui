@@ -56,18 +56,31 @@ function normalizeLoadedState(raw) {
             const enabled = l.enabled !== false;
             const instrumentId = typeof l.instrumentId === 'string' ? l.instrumentId : 'pink';
             const volume = Number.isFinite(Number(l.volume)) ? Number(l.volume) : 0.3;
-            const variantIndex = Number.isFinite(Number(l.variantIndex)) ? Number(l.variantIndex) : 0;
             const enterAt = Number.isFinite(Number(l.enterAt)) ? Math.max(0, Math.min(5, Math.round(Number(l.enterAt)))) : 0;
             const anchor = (l.anchor && typeof l.anchor === 'object')
                 ? { enabled: l.anchor.enabled === true, octaves: Math.max(1, Math.min(2, Math.round(Number(l.anchor.octaves) || 1))) }
                 : { enabled: false, octaves: 1 };
-            const variantCycle = (l.variantCycle && typeof l.variantCycle === 'object')
-                ? {
-                    enabled: l.variantCycle.enabled === true,
-                    count: Math.max(2, Math.min(8, Math.round(Number(l.variantCycle.count) || 3))),
-                    cycles: Math.max(1, Math.min(16, Math.round(Number(l.variantCycle.cycles) || 4)))
+
+            // Variant-set (klik-volgorde) + hold. Nieuw model met legacy-migratie:
+            // ouder formaat (variantIndex + variantCycle{enabled,count}) → reeks.
+            const clampVar = (n) => Math.max(0, Math.min(7, Math.round(Number(n) || 0)));
+            let variants;
+            if (Array.isArray(l.variants) && l.variants.length) {
+                const seen = new Set();
+                variants = [];
+                for (const v of l.variants) { const i = clampVar(v); if (!seen.has(i)) { seen.add(i); variants.push(i); } }
+                if (!variants.length) variants = [0];
+            } else {
+                const start = clampVar(l.variantIndex);
+                const vc = l.variantCycle;
+                if (vc && vc.enabled === true && Number(vc.count) > 1) {
+                    const count = Math.min(Math.round(Number(vc.count)), 8);
+                    variants = Array.from({ length: count }, (_, k) => (start + k) % 8);
+                } else {
+                    variants = [start];
                 }
-                : { enabled: false, count: 3, cycles: 4 };
+            }
+            const variantCycle = { cycles: Math.max(1, Math.min(16, Math.round(Number(l.variantCycle?.cycles) || 4))) };
 
             const effects = Array.isArray(l.effects) ? l.effects : [];
             const normalizedEffects = [
@@ -80,7 +93,7 @@ function normalizeLoadedState(raw) {
                 enabled,
                 instrumentId,
                 volume,
-                variantIndex,
+                variants,
                 enterAt,
                 anchor,
                 variantCycle,
