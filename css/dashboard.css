@@ -320,14 +320,49 @@ body {
 }
 
 .ls-mod {
+    position: relative;
     margin: 0.3rem 0 0.5rem;
     padding: 0.5rem;
+    padding-right: 2.5rem; /* ruimte voor de live wave-meter rechts */
     border: 1px dashed var(--ls-border);
     border-radius: var(--ls-radius);
     background: var(--ls-bg-tile);
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
+}
+
+/* Live wave-meter: smalle verticale track rechts; de naald volgt de huidige
+   golfwaarde (−1 onder … +1 boven), met een lichte middenlijn op 0. */
+.ls-mod-meter {
+    position: absolute;
+    top: 0.4rem;
+    bottom: 0.4rem;
+    right: 0.4rem;
+    width: 1.75rem; /* breedte van de ▶-knop erboven */
+    background: var(--ls-bg);
+    border: 1px dashed var(--ls-border); /* eigen stippellijn-rand */
+}
+
+/* Gestippelde middenlijn (referentie). */
+.ls-mod-meter::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    border-top: 1px dashed var(--ls-border);
+    opacity: 0.5;
+}
+
+.ls-mod-meter-needle {
+    position: absolute;
+    left: 1px;
+    right: 1px;
+    top: 50%;
+    height: 2px;
+    margin-top: -1px;
+    background: var(--ls-fg);
 }
 
 .ls-mod-row {

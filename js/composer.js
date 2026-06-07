@@ -4,7 +4,7 @@
 import { getInstrument } from './catalog/instruments.js?v=14';
 import { getEffect } from './catalog/effects.js?v=14';
 import { buildInstrumentBase, variantCount, VARIANT_COUNT } from './catalog/variations.js?v=15';
-import { modValuePattern } from './modulation.js?v=14';
+import { modValuePattern } from './modulation.js?v=15';
 
 /** Aantal fases in de auto-opbouw — 6 voor een fijnmazige opbouw over minuten. */
 export const ARC_PHASES = 6;

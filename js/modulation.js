@@ -56,3 +56,30 @@ export function modValuePattern(mod) {
     const cycles = Math.max(1, Math.min(64, Math.round(Number(mod.cycles) || 16)));
     return `"${vals.join(' ')}".slow(${cycles})`;
 }
+
+/**
+ * Live: waar zit de golf nú? Geeft de huidige waarde genormaliseerd naar [0,1]
+ * binnen het sweep-bereik [min,max] (0 = min, 1 = max), op basis van de
+ * transport-cyclus — dezelfde klok en uitlijning (op cyclus 0, één passage per
+ * `cycles` cycli) als het value-pattern. `scale === 'log'` geeft een perceptueel
+ * relevante log-schaal (filters); anders lineair. Null als p5.waves ontbreekt of
+ * de mod uit/onvolledig is. Voor de UI-meter.
+ */
+export function liveModNorm(mod, cycle, scale) {
+    if (!isWavesAvailable() || !mod || !mod.enabled) return null;
+    const min = Number(mod.min);
+    const max = Number(mod.max);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || max === min) return null;
+    const sampler = Waves.createSampler({ wave: mod.wave || 'classic sine', range: [min, max] });
+    const period = sampler.period || BASE_PERIOD;
+    const cycles = Math.max(1, Math.min(64, Math.round(Number(mod.cycles) || 16)));
+    const frac = (((Number(cycle) % cycles) + cycles) % cycles) / cycles; // 0..1 over één passage
+    const raw = sampler.sample(frac * period);
+    let t;
+    if (scale === 'log' && min > 0 && max > 0 && raw > 0) {
+        t = Math.log(raw / min) / Math.log(max / min); // log: 0 = min, 1 = max
+    } else {
+        t = (raw - min) / (max - min);
+    }
+    return Math.max(0, Math.min(1, t)); // 0..1
+}

@@ -1,8 +1,8 @@
 /**
  * Left Strudel — orchestratie, transport, debounced evaluate.
  */
-import { Dashboard } from './dashboard.js?v=19';
-import { compose, countActiveLines, arcPhaseCycleArray, arcPhaseAtCycle, resolvePhases } from './composer.js?v=18';
+import { Dashboard } from './dashboard.js?v=20';
+import { compose, countActiveLines, arcPhaseCycleArray, arcPhaseAtCycle, resolvePhases } from './composer.js?v=19';
 import { getStrudelRuntime, evaluateCode, stopAll, isSamplesReady } from './strudel-runtime.js?v=14';
 import {
     playLineBurst,
@@ -10,7 +10,7 @@ import {
     playEffectBurst,
     playEffectStandalone,
     cancelBurstTimer
-} from './oneshot.js?v=17';
+} from './oneshot.js?v=18';
 import {
     loadStateByName,
     saveStateByName,
@@ -168,6 +168,7 @@ function startHighlightLoop(dashboard) {
         let cycle = 0;
         try { if (typeof globalThis.getTime === 'function') cycle = globalThis.getTime(); } catch (e) { /* nog geen klok */ }
         dashboard.highlightCyclingVariants(cycle);
+        dashboard.updateModMeters(cycle);
 
         // Publish transport state for any host (e.g. the algorave visuals) to read.
         // Raw figures only — the host derives arc phase/progress from cpm + arc.

@@ -1,7 +1,7 @@
 /**
  * DOM: regels renderen, events, debug-paneel.
  */
-import { createLine, compose, applyPreset, activeVariantAt, ARC_PHASES, TIMELINE_PHASES, DEFAULT_ARC, DEFAULT_MASTER, clampPhase, previewThreshold, resolvePhases, timelineLabelsFor, progressionSnapshot, sameProgression, clampHold } from './composer.js?v=18';
+import { createLine, compose, applyPreset, activeVariantAt, ARC_PHASES, TIMELINE_PHASES, DEFAULT_ARC, DEFAULT_MASTER, clampPhase, previewThreshold, resolvePhases, timelineLabelsFor, progressionSnapshot, sameProgression, clampHold } from './composer.js?v=19';
 import { getInstrument, instrumentOptionsHtml } from './catalog/instruments.js?v=14';
 import {
     getEffect,
@@ -13,7 +13,7 @@ import {
     formatEffectDisplay
 } from './catalog/effects.js?v=14';
 import { variantCount } from './catalog/variations.js?v=15';
-import { isWavesAvailable, waveNames } from './modulation.js?v=14';
+import { isWavesAvailable, waveNames, liveModNorm } from './modulation.js?v=15';
 
 const FALLBACK_WAVES = ['classic sine', 'triangle', 'square', 'mountain peaks', 'steps', 'saw up', 'noise'];
 
@@ -537,8 +537,32 @@ export class Dashboard {
         });
     }
 
+    /**
+     * Live wave-meter: zet per ingeschakelde golf de naald op de huidige
+     * genormaliseerde waarde (−1…1). `cycle` = transport-positie; null (gestopt)
+     * → naald terug naar het midden (0). Zo zie je de golf echt bijsturen.
+     */
+    updateModMeters(cycle) {
+        if (!this.linesEl) return;
+        this.state.lines.forEach((line) => {
+            const el = this.linesEl.querySelector(`[data-line-id="${line.id}"]`);
+            if (!el) return;
+            (line.effects || []).forEach((slot, slotIndex) => {
+                const needle = el.querySelector(`[data-slot-mod="${slotIndex}"] [data-mod-meter]`);
+                if (!needle) return;
+                let norm = 0.5; // gestopt/uit → midden (neutraal)
+                if (cycle != null && slot.mod && slot.mod.enabled) {
+                    const v = liveModNorm(slot.mod, cycle, getEffect(slot.effectId).scale);
+                    if (Number.isFinite(v)) norm = v;
+                }
+                needle.style.top = `${(1 - norm) * 100}%`; // 1 = boven (max), 0 = onder (min)
+            });
+        });
+    }
+
     clearLiveHighlights() {
         this.highlightLivePhase(null); // ook de live fase-ring doven bij stop
+        this.updateModMeters(null);    // wave-naalden terug naar het midden
         if (!this.linesEl) return;
         this.linesEl.querySelectorAll('.ls-btn--variant.is-live').forEach((b) => b.classList.remove('is-live'));
     }
@@ -593,6 +617,9 @@ export class Dashboard {
                         <input type="number" data-field="mod-cycles" min="1" max="64" step="1" value="${mod.cycles}"></label>
                 </div>
                 ${warn}
+                <div class="ls-mod-meter" aria-hidden="true" title="Live wave value (−1…1)">
+                    <span class="ls-mod-meter-needle" data-mod-meter></span>
+                </div>
             </div>
         `;
     }
