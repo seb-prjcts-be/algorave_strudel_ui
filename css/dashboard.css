@@ -1,6 +1,7 @@
 /* Panel fonts — pulled in here so the module is self-sufficient when injected
    into a host page that doesn't already load them. */
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500&family=IBM+Plex+Mono:wght@300;400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=airwave');
 
 :root {
     --ls-bg: #f5f5f5;

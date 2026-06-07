@@ -39,7 +39,7 @@ function injectModuleStyles() {
     if (document.querySelector('link[data-left-strudel-styles]')) return;
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = new URL('../css/dashboard.css?v=15', import.meta.url).href;
+    link.href = new URL('../css/dashboard.css?v=16', import.meta.url).href;
     link.dataset.leftStrudelStyles = '';
     document.head.appendChild(link);
 }
